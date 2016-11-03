@@ -1,7 +1,8 @@
-(ql:quickload 'cl-irc)
-(ql:quickload 'drakma)
-(ql:quickload 'cl-json)
-(ql:quickload 'flexi-streams)
+(progn
+  (ql:quickload 'cl-irc)
+  (ql:quickload 'drakma)
+  (ql:quickload 'cl-json)
+  (ql:quickload 'flexi-streams))
 
 (defpackage :midymidybot
   (:use :cl :cl-user :cl-irc :irc :drakma :json))
@@ -30,7 +31,8 @@
     (concatenate 'string (msg-user msg) ": " (msg-body msg)))
 
   (defun send-irc-message (str)
-    (privmsg *irc-connection* *irc-channel* str))
+    (privmsg *irc-connection* *irc-channel*
+             (correct-cljson-surrogate-pairs str)))
 
   (defun irc-shutdown ()
     (part *irc-connection* *irc-channel* "Bot shutdown")
@@ -43,6 +45,31 @@
     (with-open-file (stream "./account_tg")
       (read-line stream)))
   (defparameter *tg-chat-id* -122773250)
+
+  (defun correct-cljson-surrogate-pairs (wrong-string)
+    (with-output-to-string (out)
+      (let ((len (length wrong-string)))
+        (dotimes (i len)
+          (let* ((char1 (aref wrong-string i))
+                 (c1 (char-code char1)))
+            (if (not (and (>= c1 #xD800)
+                          (<= c1 #xDBFF)))
+                (write-char char1 out)
+                (progn
+                  (if (>= (1+ i) len)
+                      (error "Unfinished input")
+                      (incf i))
+                  (let ((c2 (char-code (aref wrong-string i))))
+                    (write-char
+                     (code-char
+                      (+ #x10000
+                         (ash (logand #x03FF c1) 10)
+                         (logand #x03FF c2)))
+                     out)))))))))
+  ;; (correct-cljson-surrogate-pairs
+  ;;  (with-input-from-string
+  ;;      (stream "\"你好\\uD83D\\uDE03吼啊\"")
+  ;;    (cl-json:decode-json stream)))
 
   (defun tg-request (method-name &optional parameters)
     (let ((http-method (if parameters :post :get)))
@@ -73,9 +100,25 @@
   (defun tg-is-message? (update)
     (jget :message update))
 
+  (defun tg-is-sticker? (update)
+    (if (jget :sticker (jget :message update))
+        t nil))
+
   (defun tg-is-our-chat? (update)
     (= *tg-chat-id*
        (jget :id (jget :chat (jget :message update)))))
+
+  (defun msgstr-tgsticker->irc (update)
+    (let ((first-name
+           (jget :first--name
+                 (jget :from (jget :message update))))
+          (emoji
+           (jget :emoji
+                 (jget :sticker
+                       (jget :message update)))))
+      (concatenate 'string
+                   first-name ": "
+                   emoji emoji emoji)))
 
   (defun msgstr-tg->irc (update)
     (let ((first-name
@@ -110,34 +153,13 @@
                      (if (and (tg-is-message? i)
                               (tg-is-our-chat? i))
                          (send-irc-message
-                          (msgstr-tg->irc i)))))
+                          (if (tg-is-sticker? i)
+                              (msgstr-tgsticker->irc i)
+                              (msgstr-tg->irc i))))))
                  result)))))
 
-  (defun correct-cljson-surrogate-pairs (wrong-string)
-    (with-output-to-string (out)
-      (let ((len (length wrong-string)))
-        (dotimes (i len)
-          (let* ((char1 (aref wrong-string i))
-                 (c1 (char-code char1)))
-            (if (not (and (>= c1 #xD800)
-                          (<= c1 #xDBFF)))
-                (write-char char1 out)
-                (progn
-                  (if (>= (1+ i) len)
-                      (error "Unfinished input")
-                      (incf i))
-                  (let ((c2 (char-code (aref wrong-string i))))
-                    (write-char
-                     (code-char
-                      (+ #x10000
-                         (ash (logand #x03FF c1) 10)
-                         (logand #x03FF c2)))
-                     out)))))))))
   )
 ;;;;------------------------------------------------
-
-(defparameter *tg-loop* nil)
-(setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop))
 
 (progn
   (setf *irc-connection*
@@ -150,5 +172,7 @@
                (msgstr-irc->tg msg))))
   (start-background-message-handler *irc-connection*))
 
-(ping *irc-connection* "irc.freenode.net")
+(defparameter *tg-loop* nil)
+(setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop))
+
 
