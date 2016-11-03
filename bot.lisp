@@ -137,31 +137,36 @@
        ("text" . ,str))))
 
   (defun tg-getupdate-loop ()
+    "Need a `overheat' protection"
     (let ((offset 0))
       (loop
-         (let* ((response (decoded-tg-request
-                           "getUpdates"
-                           `(("offset" . ,offset)
-                             ("timeout" . 60))))
-                (result (jget :result response)))
-           (mapl (lambda (result-lst)
-                   (if (null (cdr result-lst))
-                       (setf offset
-                             (1+ (jget :update--id
-                                       (car result-lst)))))
-                   (let ((i (car result-lst)))
-                     (if (and (tg-is-message? i)
-                              (tg-is-our-chat? i))
-                         (send-irc-message
-                          (if (tg-is-sticker? i)
-                              (msgstr-tgsticker->irc i)
-                              (msgstr-tg->irc i))))))
-                 result)))))
+         (handler-case
+             (let* ((response (decoded-tg-request
+                               "getUpdates"
+                               `(("offset" . ,offset)
+                                 ("timeout" . 60))))
+                    (result (jget :result response)))
+               (mapl (lambda (result-lst)
+                       (if (null (cdr result-lst))
+                           (setf offset
+                                 (1+ (jget :update--id
+                                           (car result-lst)))))
+                       (let ((i (car result-lst)))
+                         (if (and (tg-is-message? i)
+                                  (tg-is-our-chat? i))
+                             (send-irc-message
+                              (if (tg-is-sticker? i)
+                                  (msgstr-tgsticker->irc i)
+                                  (msgstr-tg->irc i))))))
+                     result))
+           (condition (e) (format t "Error: ~S!\n" e))))))
 
   )
 ;;;;------------------------------------------------
 
-(progn
+(defparameter *tg-loop* nil)
+
+(defun bot-start ()
   (setf *irc-connection*
         (connect :nickname "MidyMidyTGBot"
                  :server "irc.freenode.net"))
@@ -170,9 +175,15 @@
             (lambda (msg)
               (send-tg-message
                (msgstr-irc->tg msg))))
-  (start-background-message-handler *irc-connection*))
+  (start-background-message-handler *irc-connection*)
 
-(defparameter *tg-loop* nil)
-(setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop))
+  (setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop)))
+
+(defun bot-shutdown ()
+  (handler-case
+      (progn
+        (sb-thread:terminate-thread *tg-loop*)
+        (irc-shutdown))
+    (condition (e) (format t "Error: ~S!\n" e))))
 
 
