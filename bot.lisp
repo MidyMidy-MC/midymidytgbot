@@ -1,11 +1,20 @@
+;; (progn
+;;   (ql:quickload 'cl-irc)
+;;   (ql:quickload 'drakma)
+;;   (ql:quickload 'cl-json)
+;;   (ql:quickload 'flexi-streams))
+
 (progn
-  (ql:quickload 'cl-irc)
-  (ql:quickload 'drakma)
-  (ql:quickload 'cl-json)
-  (ql:quickload 'flexi-streams))
+  (load "./bundle/bundle.lisp")
+  (asdf:load-system :cl-irc)
+  (asdf:load-system :drakma)
+  (asdf:load-system :cl-json)
+  (asdf:load-system :flexi-streams))
 
 (defpackage :midymidybot
-  (:use :cl :cl-user :cl-irc :irc :drakma :json))
+  (:use :cl :cl-user :cl-irc :irc :drakma :json)
+  (:export :bot-start
+           :bot-shutdown))
 
 (in-package :midymidybot)
 
@@ -14,6 +23,31 @@
   (defparameter *irc-connection* nil)
 
   (defparameter *msg* nil)
+
+  (defun correct-cljson-surrogate-pairs (wrong-string)
+    (with-output-to-string (out)
+      (let ((len (length wrong-string)))
+        (dotimes (i len)
+          (let* ((char1 (aref wrong-string i))
+                 (c1 (char-code char1)))
+            (if (not (and (>= c1 #xD800)
+                          (<= c1 #xDBFF)))
+                (write-char char1 out)
+                (progn
+                  (if (>= (1+ i) len)
+                      (error "Unfinished input")
+                      (incf i))
+                  (let ((c2 (char-code (aref wrong-string i))))
+                    (write-char
+                     (code-char
+                      (+ #x10000
+                         (ash (logand #x03FF c1) 10)
+                         (logand #x03FF c2)))
+                     out)))))))))
+  ;; (correct-cljson-surrogate-pairs
+  ;;  (with-input-from-string
+  ;;      (stream "\"你好\\uD83D\\uDE03吼啊\"")
+  ;;    (cl-json:decode-json stream)))
 
   (defun msg-user (msg)
     (source msg))
@@ -45,31 +79,6 @@
     (with-open-file (stream "./account_tg")
       (read-line stream)))
   (defparameter *tg-chat-id* -122773250)
-
-  (defun correct-cljson-surrogate-pairs (wrong-string)
-    (with-output-to-string (out)
-      (let ((len (length wrong-string)))
-        (dotimes (i len)
-          (let* ((char1 (aref wrong-string i))
-                 (c1 (char-code char1)))
-            (if (not (and (>= c1 #xD800)
-                          (<= c1 #xDBFF)))
-                (write-char char1 out)
-                (progn
-                  (if (>= (1+ i) len)
-                      (error "Unfinished input")
-                      (incf i))
-                  (let ((c2 (char-code (aref wrong-string i))))
-                    (write-char
-                     (code-char
-                      (+ #x10000
-                         (ash (logand #x03FF c1) 10)
-                         (logand #x03FF c2)))
-                     out)))))))))
-  ;; (correct-cljson-surrogate-pairs
-  ;;  (with-input-from-string
-  ;;      (stream "\"你好\\uD83D\\uDE03吼啊\"")
-  ;;    (cl-json:decode-json stream)))
 
   (defun tg-request (method-name &optional parameters)
     (let ((http-method (if parameters :post :get)))
