@@ -6,10 +6,10 @@
 
 (progn
   (load "./bundle/bundle.lisp")
-  (asdf:load-system :cl-irc)
-  (asdf:load-system :drakma)
-  (asdf:load-system :cl-json)
-  (asdf:load-system :flexi-streams))
+  (cl:require :cl-irc)
+  (cl:require :drakma)
+  (cl:require :cl-json)
+  (cl:require :flexi-streams))
 
 (defpackage :midymidybot
   (:use :cl :cl-user :cl-irc :irc :drakma :json)
