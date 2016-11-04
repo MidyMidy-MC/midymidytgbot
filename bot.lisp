@@ -22,8 +22,6 @@
   (defparameter *irc-channel* "#midymidybot")
   (defparameter *irc-connection* nil)
 
-  (defparameter *msg* nil)
-
   (defun correct-cljson-surrogate-pairs (wrong-string)
     (with-output-to-string (out)
       (let ((len (length wrong-string)))
@@ -49,6 +47,10 @@
   ;;      (stream "\"你好\\uD83D\\uDE03吼啊\"")
   ;;    (cl-json:decode-json stream)))
 
+  (defmacro tryto (&rest body)
+    `(handler-case (progn ,@body)
+       (condition () :err)))
+
   (defun msg-user (msg)
     (source msg))
 
@@ -68,9 +70,65 @@
     (privmsg *irc-connection* *irc-channel*
              (correct-cljson-surrogate-pairs str)))
 
+  (defvar *irc-message-pool-head* (list :head))
+  (defvar *irc-message-pool-tail* *irc-message-pool-head*)
+  (defvar *irc-message-pool-lock*
+    (sb-thread:make-mutex
+     :name "irc message pool lock"))
+
+  (defun push-msg-pool (str)
+    (sb-thread:with-mutex (*irc-message-pool-lock*)
+      (let ((new (list str)))
+        (setf (cdr *irc-message-pool-tail*) new)
+        (setf *irc-message-pool-tail* new))))
+
+  (defvar *tg-message-sender*)
+
+  (defun irc-reconnect (&optional (try 0) (callback nil))
+    (if (> try 50)
+        (progn
+          (format t "FATAL ERROR: CAN NOT CONNECT TO IRC~%")
+          (send-tg-message "can not connect to IRC, BOT HALT!")
+          (format t "BOT HALT~%")
+          (bot-halt)
+          (error "BOT HALT!"))
+        (progn
+          (tryto (remove-all-hooks *irc-connection*)
+                 (quit *irc-connection*))
+          (sleep 5)
+          (setf *irc-connection*
+                (connect :nickname "MidyMidyTGBot"
+                         :server "irc.freenode.net"))
+          (join *irc-connection* *irc-channel*)
+          (add-hook *irc-connection*
+                    'irc::irc-privmsg-message
+                    (lambda (msg)
+                      (funcall *tg-message-sender*
+                               (msgstr-irc->tg msg))))
+          (start-background-message-handler *irc-connection*)
+          (if callback
+              (funcall callback)))))
+
+  (defun clear-msg-pool-f (&optional (try 0))
+    (if (cdr *irc-message-pool-head*)
+        (handler-case
+            (progn
+              (send-irc-message
+               (cadr *irc-message-pool-head*))
+              (setf (cdr *irc-message-pool-head*)
+                    (cddr *irc-message-pool-head*))
+              (clear-msg-pool-f))
+          (condition ()
+            (progn (format t "Error: Cannot send message!~%")
+                   (irc-reconnect
+                    (1+ try)
+                    (lambda ()
+                      (clear-msg-pool-f (1+ try)))))))))
+
   (defun irc-shutdown ()
-    (part *irc-connection* *irc-channel* "Bot shutdown")
-    (quit *irc-connection* "leaving"))
+    (tryto
+     (part *irc-connection* *irc-channel* "Bot shutdown"))
+    (tryto (quit *irc-connection* "leaving")))
   )
 ;;;; -----------------------------------------
 
@@ -144,6 +202,7 @@
      "sendMessage"
      `(("chat_id" . ,*tg-chat-id*)
        ("text" . ,str))))
+  (setf *tg-message-sender* #'send-tg-message)
 
   (defun tg-getupdate-loop ()
     "Need a `overheat' protection"
@@ -163,10 +222,20 @@
                        (let ((i (car result-lst)))
                          (if (and (tg-is-message? i)
                                   (tg-is-our-chat? i))
-                             (send-irc-message
-                              (if (tg-is-sticker? i)
-                                  (msgstr-tgsticker->irc i)
-                                  (msgstr-tg->irc i))))))
+                             (let ((msg (if (tg-is-sticker? i)
+                                            (msgstr-tgsticker->irc i)
+                                            (msgstr-tg->irc i))))
+                               (handler-case
+                                   (send-irc-message msg)
+                                 (condition (e)
+                                   (format
+                                    t
+                                    "WARNING, can not send message! Reason: ~S" e)
+                                   (push-msg-pool msg)
+                                   (irc-reconnect
+                                    0
+                                    (lambda ()
+                                      (clear-msg-pool-f 1)))))))))
                      result))
            (condition (e) (format t "Error: ~S!\n" e))))))
 
@@ -176,23 +245,10 @@
 (defparameter *tg-loop* nil)
 
 (defun bot-start ()
-  (setf *irc-connection*
-        (connect :nickname "MidyMidyTGBot"
-                 :server "irc.freenode.net"))
-  (join *irc-connection* *irc-channel*)
-  (add-hook *irc-connection* 'irc::irc-privmsg-message
-            (lambda (msg)
-              (send-tg-message
-               (msgstr-irc->tg msg))))
-  (start-background-message-handler *irc-connection*)
-
+  (irc-reconnect)
   (setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop)))
 
-(defun bot-shutdown ()
-  (handler-case
-      (progn
-        (sb-thread:terminate-thread *tg-loop*)
-        (irc-shutdown))
-    (condition (e) (format t "Error: ~S!\n" e))))
-
+(defun bot-halt ()
+  (tryto (sb-thread:terminate-thread *tg-loop*))
+  (tryto (irc-shutdown)))
 
