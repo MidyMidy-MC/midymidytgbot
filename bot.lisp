@@ -143,7 +143,8 @@
       (sleep 20)
       (let ((pong-time *pong*))
         (if (> (- pong-time ping-time) 20)
-            (irc-reconnect 1)
+            (progn (tryto (send-tg-message "Reconnecting to IRC"))
+                   (tryto (irc-reconnect 1)))
             nil))))
   )
 ;;;; -----------------------------------------
