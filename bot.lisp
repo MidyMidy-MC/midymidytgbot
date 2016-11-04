@@ -22,7 +22,7 @@
   (defparameter *irc-channel* "#midymidybot")
   (defparameter *irc-connection* nil)
 
-  (defparameter *pong*)
+  (defparameter *pong* 0)
   (setf *pong* 0)
 
   (defun correct-cljson-surrogate-pairs (wrong-string)
