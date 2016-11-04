@@ -22,6 +22,9 @@
   (defparameter *irc-channel* "#midymidybot")
   (defparameter *irc-connection* nil)
 
+  (defparameter *pong*)
+  (setf *pong* 0)
+
   (defun correct-cljson-surrogate-pairs (wrong-string)
     (with-output-to-string (out)
       (let ((len (length wrong-string)))
@@ -93,8 +96,8 @@
           (bot-halt)
           (error "BOT HALT!"))
         (progn
-          (tryto (remove-all-hooks *irc-connection*)
-                 (quit *irc-connection*))
+          (tryto (remove-all-hooks *irc-connection*))
+          (tryto (quit *irc-connection*))
           (sleep 5)
           (setf *irc-connection*
                 (connect :nickname "MidyMidyTGBot"
@@ -105,6 +108,10 @@
                     (lambda (msg)
                       (funcall *tg-message-sender*
                                (msgstr-irc->tg msg))))
+          (add-hook *irc-connection*
+                    'irc::irc-pong-message
+                    (lambda (msg)
+                      (setf *pong* (received-time msg))))
           (start-background-message-handler *irc-connection*)
           (if callback
               (funcall callback)))))
@@ -129,6 +136,15 @@
     (tryto
      (part *irc-connection* *irc-channel* "Bot shutdown"))
     (tryto (quit *irc-connection* "leaving")))
+
+  (defun irc-check-connection ()
+    (let ((ping-time (get-universal-time)))
+      (ping *irc-connection* *irc-channel*)
+      (sleep 20)
+      (let ((pong-time *pong*))
+        (if (> (- pong-time ping-time) 20)
+            (irc-reconnect 1)
+            nil))))
   )
 ;;;; -----------------------------------------
 
@@ -243,12 +259,20 @@
 ;;;;------------------------------------------------
 
 (defparameter *tg-loop* nil)
+(defparameter *irc-watcher* nil)
 
 (defun bot-start ()
   (irc-reconnect)
+  (setf *irc-watcher*
+        (sb-thread:make-thread
+         (lambda ()
+           (loop
+              (sleep 60)
+              (irc-check-connection)))))
   (setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop)))
 
 (defun bot-halt ()
   (tryto (sb-thread:terminate-thread *tg-loop*))
+  (tryto (sb-thread:terminate-thread *irc-watcher*))
   (tryto (irc-shutdown)))
 
