@@ -31,6 +31,7 @@
 (defvar *stdout* *standard-output*)
 (defvar *ping-semaphore* (sb-thread:make-semaphore))
 (defparameter *irc-read-loop* nil)
+(defvar *tg-message-sender*)
 
 (defun exit ()
   (sb-ext:exit))
@@ -99,7 +100,12 @@
       (setf (cdr *irc-message-pool-tail*) new)
       (setf *irc-message-pool-tail* new))))
 
-(defvar *tg-message-sender*)
+(defun irc-message-hook (msg)
+  (if (string= *irc-channel*
+               (msg-channel msg))
+      (funcall *tg-message-sender*
+               (msgstr-irc->tg msg))
+      nil))
 
 ;; supress warning
 (defun bot-halt ())
@@ -119,9 +125,7 @@
   (format *stdout* "ADD HOOKS~%")
   (add-hook *irc-connection*
             'irc::irc-privmsg-message
-            (lambda (msg)
-              (funcall *tg-message-sender*
-                       (msgstr-irc->tg msg))))
+            #'irc-message-hook)
   (add-hook *irc-connection*
             'irc::irc-pong-message
             (lambda (msg)
