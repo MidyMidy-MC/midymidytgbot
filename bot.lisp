@@ -91,6 +91,8 @@
 
   (defvar *tg-message-sender*)
 
+  (defun bot-halt ())
+  (defun send-tg-message (a) a) ;; supress warning
   (defun irc-reconnect (&optional (try 0) (callback nil))
     (if (> try 50)
         (progn
