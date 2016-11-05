@@ -322,8 +322,11 @@
                                          (car result-lst)))))
                      (process-tg-msg (car result-lst)))
                    result))
-         (condition (e) (format *stdout*
-                                "TG-LOOP in trouble: ~S!\n" e))))))
+         (condition (e)
+           (progn (format *stdout*
+                          "TG-LOOP in trouble: ~S!~%" e)
+                  ;; prevent loop overheat
+                  (sleep 2)))))))
 
 ;;;;------------------------------------------------
 
