@@ -188,27 +188,18 @@
           (return (cdr i)))))
 
   (defun tg-is-message? (update)
-    (jget :message update))
+    (if (jget :message update) t nil))
 
   (defun tg-is-sticker? (update)
-    (if (jget :sticker (jget :message update))
-        t nil))
+    (if (jget :sticker (jget :message update)) t nil))
+
+  (defun tg-is-reply? (update)
+    (if (jget :reply--to--message
+              (jget :message update)) t nil))
 
   (defun tg-is-our-chat? (update)
     (= *tg-chat-id*
        (jget :id (jget :chat (jget :message update)))))
-
-  (defun msgstr-tgsticker->irc (update)
-    (let ((first-name
-           (jget :first--name
-                 (jget :from (jget :message update))))
-          (emoji
-           (jget :emoji
-                 (jget :sticker
-                       (jget :message update)))))
-      (concatenate 'string
-                   first-name ": "
-                   emoji emoji emoji)))
 
   (defun msgstr-tg->irc-list (update)
     (let ((first-name (jget :first--name
@@ -229,6 +220,30 @@
             (push (make-msg str) lst))
         (reverse lst))))
 
+  (defun msgstr-tgreply->irc-list (update)
+    (let* ((text-lst (msgstr-tg->irc-list update))
+           (reply-to (jget :text
+                           (jget :reply--to--message
+                                 (jget :message update))))
+           (reply-to-sub (subseq reply-to 0 20)))
+      (setf (car text-lst)
+            (concatenate 'string
+                         "Re: [" reply-to-sub "] "
+                         (car text-lst)))
+      text-lst))
+
+  (defun msgstr-tgsticker->irc (update)
+    (let ((first-name
+           (jget :first--name
+                 (jget :from (jget :message update))))
+          (emoji
+           (jget :emoji
+                 (jget :sticker
+                       (jget :message update)))))
+      (concatenate 'string
+                   first-name ": "
+                   emoji emoji emoji)))
+
   (defun send-tg-message (str)
     (decoded-tg-request
      "sendMessage"
@@ -240,6 +255,7 @@
     (let ((msg-lst
            (cond
              ((tg-is-sticker? update) `(,(msgstr-tgsticker->irc update)))
+             ((tg-is-reply? update) (msgstr-tgreply->irc-list update))
              ((tg-is-message? update) (msgstr-tg->irc-list update)))))
       (dolist (msg msg-lst)
         (handler-case
