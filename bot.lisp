@@ -214,17 +214,18 @@
           (text (jget :text (jget :message update)))
           (str (make-str))
           (lst nil))
-      (loop for c across text do
-           (if (not (equal #\Newline c))
-               (with-output-to-string (out str)
-                 (write-char c out))
-               (progn (push (concatenate 'string first-name ": " str)
-                            lst)
-                      (setf str (make-str)))))
-      (if (= 0 (length str))
-          nil
-          (push str lst))
-      (reverse lst)))
+      (labels ((make-msg (str)
+                 (concatenate 'string first-name ": " str)))
+        (loop for c across text do
+             (if (not (equal #\Newline c))
+                 (with-output-to-string (out str)
+                   (write-char c out))
+                 (progn (push (make-msg str) lst)
+                        (setf str (make-str)))))
+        (if (= 0 (length str))
+            nil
+            (push (make-msg str) lst))
+        (reverse lst))))
 
   (defun send-tg-message (str)
     (decoded-tg-request
