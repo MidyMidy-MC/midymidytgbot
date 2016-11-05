@@ -132,7 +132,7 @@
               (declare (ignore msg))
               (sb-thread:signal-semaphore
                *ping-semaphore*)))
-  (format *stdout* "ACTIVATE HOOKS~%")
+  (format *stdout* "ACTIVATE IRC-READ-LOOP~%")
   (setf *irc-read-loop*
         (sb-thread:make-thread
          (lambda ()
