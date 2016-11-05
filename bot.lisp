@@ -226,7 +226,9 @@
                            (jget :reply--to--message
                                  (jget :message update))))
            (reply-to-sub (if (> (length reply-to) 20)
-                             (subseq reply-to 0 20)
+                             (concatenate 'string
+                                          (subseq reply-to 0 20)
+                                          " ...")
                              reply-to)))
       (setf (car text-lst)
             (concatenate 'string
