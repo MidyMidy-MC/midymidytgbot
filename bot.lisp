@@ -221,14 +221,15 @@
         (reverse lst))))
 
   (defun msgstr-tgreply->irc-list (update)
-    (let* ((text-lst (msgstr-tg->irc-list update))
+    (let* ((too-long 40)
+           (text-lst (msgstr-tg->irc-list update))
            (reply-to (jget :text
                            (jget :reply--to--message
                                  (jget :message update))))
-           (reply-to-sub (if (> (length reply-to) 20)
+           (reply-to-sub (if (> (length reply-to) too-long)
                              (concatenate 'string
-                                          (subseq reply-to 0 20)
-                                          " ...")
+                                          (subseq reply-to 0 too-long)
+                                          "......")
                              reply-to)))
       (setf (car text-lst)
             (concatenate 'string
