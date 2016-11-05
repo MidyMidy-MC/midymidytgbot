@@ -20,9 +20,11 @@
 
 (defparameter *irc-channel* "#midymidybot")
 (defparameter *irc-connection* nil)
+(defvar *stdout* *standard-output*)
+(defvar *ping-semaphore* (sb-thread:make-semaphore))
 
-(defparameter *pong* 0)
-(setf *pong* 0)
+(defun exit ()
+  (sb-ext:exit))
 
 (defun make-str ()
   (make-array '(0) :element-type 'character
@@ -90,38 +92,38 @@
 
 (defvar *tg-message-sender*)
 
+;; supress warning
 (defun bot-halt ())
-(defun send-tg-message (a) a) ;; supress warning
-(defun irc-reconnect (&optional (try 0) (callback nil))
-  (if (> try 50)
-      (progn
-        (format t "FATAL ERROR: CAN NOT CONNECT TO IRC~%")
-        (send-tg-message "can not connect to IRC, BOT HALT!")
-        (format t "BOT HALT~%")
-        (bot-halt)
-        (error "BOT HALT!"))
-      (progn
-        (tryto (remove-all-hooks *irc-connection*))
-        (tryto (quit *irc-connection*))
-        (sleep 5)
-        (setf *irc-connection*
-              (connect :nickname "MidyMidyTGBot"
-                       :server "irc.freenode.net"))
-        (join *irc-connection* *irc-channel*)
-        (add-hook *irc-connection*
-                  'irc::irc-privmsg-message
-                  (lambda (msg)
-                    (funcall *tg-message-sender*
-                             (msgstr-irc->tg msg))))
-        (add-hook *irc-connection*
-                  'irc::irc-pong-message
-                  (lambda (msg)
-                    (setf *pong* (received-time msg))))
-        (start-background-message-handler *irc-connection*)
-        (if callback
-            (funcall callback)))))
+(defun send-tg-message (str) str)
+(defun irc-check-connection ())
+(defun irc-reconnect (&optional (callback nil))
+  (tryto (remove-all-hooks *irc-connection*))
+  (tryto (quit *irc-connection*))
+  (sleep 5)
+  (format *stdout* "Connecting to IRC~%")
+  (setf *irc-connection*
+        (connect :nickname "MidyMidyTGBot"
+                 :server "irc.freenode.net"))
+  (format *stdout* "JOIN CHANNEL~%")
+  (join *irc-connection* *irc-channel*)
+  (format *stdout* "ADD HOOKS~%")
+  (add-hook *irc-connection*
+            'irc::irc-privmsg-message
+            (lambda (msg)
+              (funcall *tg-message-sender*
+                       (msgstr-irc->tg msg))))
+  (add-hook *irc-connection*
+            'irc::irc-pong-message
+            (lambda (msg)
+              (declare (ignore msg))
+              (sb-thread:signal-semaphore
+               *ping-semaphore*)))
+  (format *stdout* "ACTIVATE HOOKS~%")
+  (start-background-message-handler *irc-connection*)
+  (if callback
+      (funcall callback)))
 
-(defun clear-msg-pool-f (&optional (try 0))
+(defun clear-msg-pool-f ()
   (if (cdr *irc-message-pool-head*)
       (handler-case
           (progn
@@ -130,12 +132,8 @@
             (setf (cdr *irc-message-pool-head*)
                   (cddr *irc-message-pool-head*))
             (clear-msg-pool-f))
-        (condition ()
-          (progn (format t "Error: Cannot send message!~%")
-                 (irc-reconnect
-                  (1+ try)
-                  (lambda ()
-                    (clear-msg-pool-f (1+ try)))))))))
+        (condition () (format
+                       t "Error: Cannot send message!~%")))))
 
 (defun irc-shutdown ()
   (tryto
@@ -143,14 +141,13 @@
   (tryto (quit *irc-connection* "leaving")))
 
 (defun irc-check-connection ()
-  (let ((ping-time (get-universal-time)))
-    (ping *irc-connection* *irc-channel*)
-    (sleep 20)
-    (let ((pong-time *pong*))
-      (if (> (- pong-time ping-time) 20)
-          (progn (tryto (send-tg-message "Reconnecting to IRC"))
-                 (tryto (irc-reconnect 1)))
-          nil))))
+  (tryto (ping *irc-connection* *irc-channel*))
+  (if (sb-thread:wait-on-semaphore
+       *ping-semaphore* :timeout 20)
+      (progn (setf *ping-semaphore* (sb-thread:make-semaphore))
+             t)
+      (progn (setf *ping-semaphore* (sb-thread:make-semaphore))
+             nil)))
 
 ;;;; -----------------------------------------
 
@@ -264,14 +261,10 @@
       (handler-case
           (send-irc-message msg)
         (condition (e)
-          (format
-           t
-           "WARNING, can not send message! Reason: ~S" e)
-          (push-msg-pool msg)
-          (irc-reconnect
-           0
-           (lambda ()
-             (clear-msg-pool-f 1))))))))
+          (progn
+            (format *stdout*
+                    "WARNING, can not send message! Reason: ~S" e)
+            (push-msg-pool msg)))))))
 
 (defun tg-getupdate-loop ()
   "Need a `overheat' protection"
@@ -296,16 +289,43 @@
 
 (defparameter *tg-loop* nil)
 (defparameter *irc-watcher* nil)
+(defvar *irc-reconnect-counter* 0)
 
-(defun bot-start ()
-  (irc-reconnect)
+(defun creat-watcher ()
+  (format *stdout* "Create IRC watcher~%")
   (setf *irc-watcher*
         (sb-thread:make-thread
          (lambda ()
            (loop
               (sleep 60)
-              (irc-check-connection)))))
-  (setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop)))
+              (format *stdout* "Checking IRC Connection ...")
+              (if (irc-check-connection)
+                  (progn
+                    (format *stdout* "OK!~%")
+                    (format *stdout* "Trying to clear Msg Pool~%")
+                    (clear-msg-pool-f)
+                    (setf *irc-reconnect-counter* 0))
+                  (progn
+                    (format *stdout*
+                            "FAILED! RECONNECTING!~%")
+                    (incf *irc-reconnect-counter*)
+                    (if (> 20 *irc-reconnect-counter*)
+                        (handler-case (irc-reconnect)
+                          (condition (e)
+                            (format *stdout*
+                                    "Having Trouble: ~S~%"
+                                    e)))
+                        (progn (format *stdout*
+                                       "~%Give up, Bot halt!~%")
+                               (bot-halt))))))))))
+
+(defun bot-start ()
+  (irc-reconnect)
+  (format *stdout* "Creat TG LOOP~%")
+  (setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop))
+  (sleep 10)
+  (creat-watcher))
+
 
 (defun bot-halt ()
   (tryto (sb-thread:terminate-thread *tg-loop*))
