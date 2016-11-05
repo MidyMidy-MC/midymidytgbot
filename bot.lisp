@@ -124,7 +124,8 @@
   (setf *irc-read-loop*
         (sb-thread:make-thread
          (lambda ()
-           (read-message-loop *irc-connection*))))
+           (read-message-loop *irc-connection*))
+         :name "IRC-READ-LOOP"))
   ;;(start-background-message-handler *irc-connection*)
   (if callback
       (funcall callback)))
@@ -269,7 +270,7 @@
         (condition (e)
           (progn
             (format *stdout*
-                    "WARNING, can not send message! Reason: ~S" e)
+                    "TG->IRC: can not send message! Reason: ~S~%" e)
             (push-msg-pool msg)))))))
 
 (defun tg-getupdate-loop ()
@@ -280,7 +281,7 @@
            (let* ((response (decoded-tg-request
                              "getUpdates"
                              `(("offset" . ,offset)
-                               ("timeout" . 60))))
+                               ("timeout" . 17))))
                   (result (jget :result response)))
              (mapl (lambda (result-lst)
                      (if (null (cdr result-lst))
@@ -289,7 +290,8 @@
                                          (car result-lst)))))
                      (process-tg-msg (car result-lst)))
                    result))
-         (condition (e) (format t "Error: ~S!\n" e))))))
+         (condition (e) (format *stdout*
+                                "TG-LOOP in trouble: ~S!\n" e))))))
 
 ;;;;------------------------------------------------
 
@@ -316,22 +318,24 @@
                             "FAILED! RECONNECTING!~%")
                     (incf *irc-reconnect-counter*)
                     (if (> 20 *irc-reconnect-counter*)
-                        (handler-case (irc-reconnect)
+                        (handler-case (progn (irc-reconnect)
+                                             (clear-msg-pool-f))
                           (condition (e)
                             (format *stdout*
                                     "Having Trouble: ~S~%"
                                     e)))
                         (progn (format *stdout*
                                        "~%Give up, Bot halt!~%")
-                               (bot-halt))))))))))
+                               (bot-halt)))))))
+         :name "IRC-WATCHER")))
 
 (defun bot-start ()
   (irc-reconnect)
   (format *stdout* "Creat TG LOOP~%")
-  (setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop))
+  (setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop
+                                         :name "TG-LOOP"))
   (sleep 10)
   (creat-watcher))
-
 
 (defun bot-halt ()
   (tryto (sb-thread:terminate-thread *tg-loop*))
