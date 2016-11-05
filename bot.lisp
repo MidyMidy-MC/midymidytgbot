@@ -25,6 +25,10 @@
   (defparameter *pong* 0)
   (setf *pong* 0)
 
+  (defun make-str ()
+    (make-array '(0) :element-type 'character
+                :fill-pointer 0 :adjustable t))
+
   (defun correct-cljson-surrogate-pairs (wrong-string)
     (with-output-to-string (out)
       (let ((len (length wrong-string)))
@@ -204,15 +208,23 @@
                    first-name ": "
                    emoji emoji emoji)))
 
-  (defun msgstr-tg->irc (update)
-    (let ((first-name
-           (jget :first--name
-                 (jget :from (jget :message update))))
-          (text
-           (jget :text (jget :message update))))
-      (concatenate 'string
-                   first-name ": "
-                   text)))
+  (defun msgstr-tg->irc-list (update)
+    (let ((first-name (jget :first--name
+                            (jget :from (jget :message update))))
+          (text (jget :text (jget :message update)))
+          (str (make-str))
+          (lst nil))
+      (loop for c across text do
+           (if (not (equal #\Newline c))
+               (with-output-to-string (out str)
+                 (write-char c out))
+               (progn (push (concatenate 'string first-name ": " str)
+                            lst)
+                      (setf str (make-str)))))
+      (if (= 0 (length str))
+          nil
+          (push str lst))
+      (reverse lst)))
 
   (defun send-tg-message (str)
     (decoded-tg-request
@@ -220,6 +232,24 @@
      `(("chat_id" . ,*tg-chat-id*)
        ("text" . ,str))))
   (setf *tg-message-sender* #'send-tg-message)
+
+  (defun process-tg-msg (update)
+    (let ((msg-lst
+           (cond
+             ((tg-is-sticker? update) `(,(msgstr-tgsticker->irc update)))
+             ((tg-is-message? update) (msgstr-tg->irc-list update)))))
+      (dolist (msg msg-lst)
+        (handler-case
+            (send-irc-message msg)
+          (condition (e)
+            (format
+             t
+             "WARNING, can not send message! Reason: ~S" e)
+            (push-msg-pool msg)
+            (irc-reconnect
+             0
+             (lambda ()
+               (clear-msg-pool-f 1))))))))
 
   (defun tg-getupdate-loop ()
     "Need a `overheat' protection"
@@ -236,23 +266,7 @@
                            (setf offset
                                  (1+ (jget :update--id
                                            (car result-lst)))))
-                       (let ((i (car result-lst)))
-                         (if (and (tg-is-message? i)
-                                  (tg-is-our-chat? i))
-                             (let ((msg (if (tg-is-sticker? i)
-                                            (msgstr-tgsticker->irc i)
-                                            (msgstr-tg->irc i))))
-                               (handler-case
-                                   (send-irc-message msg)
-                                 (condition (e)
-                                   (format
-                                    t
-                                    "WARNING, can not send message! Reason: ~S" e)
-                                   (push-msg-pool msg)
-                                   (irc-reconnect
-                                    0
-                                    (lambda ()
-                                      (clear-msg-pool-f 1)))))))))
+                       (process-tg-msg (car result-lst)))
                      result))
            (condition (e) (format t "Error: ~S!\n" e))))))
 
