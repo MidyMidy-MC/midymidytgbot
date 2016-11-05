@@ -10,7 +10,6 @@ MidyMidy社区的bot，用于在IRC频道和Telegram群之间传话。
 TODO
 ----
 
-* Telegram回复IRC
 * 将Telegram的图片通过图床传送给IRC
 * 修改错误字符串的函数需要故障恢复功能
 * 需要多方面地防备Telegram抽疯
