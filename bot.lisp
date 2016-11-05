@@ -22,6 +22,7 @@
 (defparameter *irc-connection* nil)
 (defvar *stdout* *standard-output*)
 (defvar *ping-semaphore* (sb-thread:make-semaphore))
+(defparameter *irc-read-loop* nil)
 
 (defun exit ()
   (sb-ext:exit))
@@ -99,6 +100,7 @@
 (defun irc-reconnect (&optional (callback nil))
   (tryto (remove-all-hooks *irc-connection*))
   (tryto (quit *irc-connection*))
+  (tryto (sb-thread:terminate-thread *irc-read-loop*))
   (sleep 5)
   (format *stdout* "Connecting to IRC~%")
   (setf *irc-connection*
@@ -119,7 +121,11 @@
               (sb-thread:signal-semaphore
                *ping-semaphore*)))
   (format *stdout* "ACTIVATE HOOKS~%")
-  (start-background-message-handler *irc-connection*)
+  (setf *irc-read-loop*
+        (sb-thread:make-thread
+         (lambda ()
+           (read-message-loop *irc-connection*))))
+  ;;(start-background-message-handler *irc-connection*)
   (if callback
       (funcall callback)))
 
