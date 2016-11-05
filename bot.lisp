@@ -19,6 +19,14 @@
 (in-package :midymidybot)
 
 (defparameter *irc-channel* "#midymidybot")
+
+(defparameter *tg-auth-str*
+  (with-open-file (stream "./account_tg")
+    (read-line stream)))
+
+(defparameter *tg-chat-id* -122773250)
+(defparameter *tg-bot-id* 258812230)
+
 (defparameter *irc-connection* nil)
 (defvar *stdout* *standard-output*)
 (defvar *ping-semaphore* (sb-thread:make-semaphore))
@@ -158,11 +166,6 @@
 
 ;;;; -----------------------------------------
 
-(defparameter *tg-auth-str*
-  (with-open-file (stream "./account_tg")
-    (read-line stream)))
-(defparameter *tg-chat-id* -122773250)
-
 (defun tg-request (method-name &optional parameters)
   (let ((http-method (if parameters :post :get)))
     (flexi-streams:octets-to-string
@@ -222,22 +225,51 @@
           (push (make-msg str) lst))
       (reverse lst))))
 
+(defun remove-newline (str)
+  (with-output-to-string (out)
+    (loop for c across str do
+         (write-char (if (equal #\Newline c)
+                         #\Space c)
+                     out))))
+
+(defun tg-update-replier-id (update)
+  (jget :id
+        (jget :from
+              (jget :reply--to--message
+                    (jget :message update)))))
+
+(defun tg-update-replier-first-name (update)
+  (jget :first--name
+        (jget :from
+              (jget :reply--to--message
+                    (jget :message update)))))
+
 (defun msgstr-tgreply->irc-list (update)
   (let* ((too-long 40)
          (text-lst (msgstr-tg->irc-list update))
-         (reply-to (jget :text
-                         (jget :reply--to--message
-                               (jget :message update))))
-         (reply-to-sub (if (> (length reply-to) too-long)
-                           (concatenate 'string
-                                        (subseq reply-to 0 too-long)
-                                        "......")
-                           reply-to)))
-    (setf (car text-lst)
-          (concatenate 'string
-                       "Re: [" reply-to-sub "] "
-                       (car text-lst)))
-    text-lst))
+         (reply-to
+          (remove-newline
+           (jget :text
+                 (jget :reply--to--message
+                       (jget :message update))))))
+    (if (= (tg-update-replier-id update) *tg-bot-id*)
+        nil
+        (setf reply-to
+              (concatenate
+               'string
+               (tg-update-replier-first-name update)
+               ": " reply-to)))
+    (let ((reply-to-sub
+           (if (> (length reply-to) too-long)
+               (concatenate 'string
+                            (subseq reply-to 0 too-long)
+                            "......")
+               reply-to)))
+      (setf (car text-lst)
+            (concatenate 'string
+                         "Re: [" reply-to-sub "] "
+                         (car text-lst)))
+      text-lst)))
 
 (defun msgstr-tgsticker->irc (update)
   (let ((first-name
