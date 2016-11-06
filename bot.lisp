@@ -356,7 +356,7 @@
 (defvar *irc-reconnect-counter* 0)
 
 (defun creat-watcher ()
-  (format *stdout* "Create IRC watcher")
+  (logging "Create IRC watcher")
   (setf *irc-watcher*
         (sb-thread:make-thread
          (lambda ()
