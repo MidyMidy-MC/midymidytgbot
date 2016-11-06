@@ -178,13 +178,19 @@
   (tryto (quit *irc-connection* "leaving")))
 
 (defun irc-check-connection ()
-  (tryto (ping *irc-connection* *irc-channel*))
-  (if (sb-thread:wait-on-semaphore
-       *ping-semaphore* :timeout 20)
-      (progn (setf *ping-semaphore* (sb-thread:make-semaphore))
-             t)
-      (progn (setf *ping-semaphore* (sb-thread:make-semaphore))
-             nil)))
+  (let ((t1 (get-internal-real-time)))
+    (tryto (ping *irc-connection* *irc-channel*))
+    (if (sb-thread:wait-on-semaphore
+         *ping-semaphore* :timeout 20)
+        (let ((time-elapse
+               (float (/ (- (get-internal-real-time) t1)
+                         internal-time-units-per-second))))
+          (setf *ping-semaphore*
+                (sb-thread:make-semaphore))
+          time-elapse)
+        (progn (setf *ping-semaphore*
+                     (sb-thread:make-semaphore))
+               nil))))
 
 ;;;; -----------------------------------------
 
@@ -363,22 +369,23 @@
            (loop
               (sleep 60)
               (logging "Checking IRC Connection ...")
-              (if (irc-check-connection)
-                  (progn
-                    (logging "Connection OK!")
-                    (logging "Trying to clear Msg Pool")
-                    (clear-msg-pool-f)
-                    (setf *irc-reconnect-counter* 0))
-                  (progn
-                    (logging "FAILED! RECONNECTING!")
-                    (incf *irc-reconnect-counter*)
-                    (if (> 20 *irc-reconnect-counter*)
-                        (handler-case (progn (irc-reconnect)
-                                             (clear-msg-pool-f))
-                          (condition (e)
-                            (logging "Having Trouble: ~S" e)))
-                        (progn (logging "Give up, Bot halt!")
-                               (bot-halt)))))))
+              (let ((delay (irc-check-connection)))
+                (if delay
+                    (progn
+                      (logging "OK! Ping delay: ~As" delay)
+                      (logging "Trying to clear Msg Pool")
+                      (clear-msg-pool-f)
+                      (setf *irc-reconnect-counter* 0))
+                    (progn
+                      (logging "FAILED! RECONNECTING!")
+                      (incf *irc-reconnect-counter*)
+                      (if (> 20 *irc-reconnect-counter*)
+                          (handler-case (progn (irc-reconnect)
+                                               (clear-msg-pool-f))
+                            (condition (e)
+                              (logging "Having Trouble: ~S" e)))
+                          (progn (logging "Give up, Bot halt!")
+                                 (bot-halt))))))))
          :name "IRC-WATCHER")))
 
 (defun bot-start ()
