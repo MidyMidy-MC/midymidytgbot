@@ -33,6 +33,22 @@
 (defparameter *irc-read-loop* nil)
 (defvar *tg-message-sender*)
 
+(defun time-str ()
+  (multiple-value-bind
+        (ss mm hh d m)
+      (get-decoded-time)
+    (format nil "[~A-~A ~2,'0D:~2,'0D:~2,'0D]"
+            m d hh mm ss)))
+
+(defvar *log-out* *stdout*)
+(defun logging (msg &rest args)
+  (apply #'format
+         (append
+          (list *log-out*
+                (concatenate 'string
+                             (time-str) " " msg "~%"))
+          args)))
+
 (defun exit ()
   (sb-ext:exit))
 
@@ -49,9 +65,11 @@
           (if (not (and (>= c1 #xD800)
                         (<= c1 #xDBFF)))
               (write-char char1 out)
-              (progn
+              (block nil
                 (if (>= (1+ i) len)
-                    (error "Unfinished input")
+                    (progn
+                      (logging "Corrector: invalid input, A8BSP")
+                      (return "[Invalid JSON, code: LXEA6FD]"))
                     (incf i))
                 (let ((c2 (char-code (aref wrong-string i))))
                   (write-char
@@ -116,13 +134,13 @@
   (tryto (quit *irc-connection*))
   (tryto (sb-thread:terminate-thread *irc-read-loop*))
   (sleep 5)
-  (format *stdout* "Connecting to IRC~%")
+  (logging "Connecting to IRC")
   (setf *irc-connection*
         (connect :nickname "MidyMidyTGBot"
                  :server "irc.freenode.net"))
-  (format *stdout* "JOIN CHANNEL~%")
+  (logging "JOIN CHANNEL")
   (join *irc-connection* *irc-channel*)
-  (format *stdout* "ADD HOOKS~%")
+  (logging "ADD HOOKS")
   (add-hook *irc-connection*
             'irc::irc-privmsg-message
             #'irc-message-hook)
@@ -132,7 +150,7 @@
               (declare (ignore msg))
               (sb-thread:signal-semaphore
                *ping-semaphore*)))
-  (format *stdout* "ACTIVATE IRC-READ-LOOP~%")
+  (logging "ACTIVATE IRC-READ-LOOP")
   (setf *irc-read-loop*
         (sb-thread:make-thread
          (lambda ()
@@ -151,8 +169,8 @@
             (setf (cdr *irc-message-pool-head*)
                   (cddr *irc-message-pool-head*))
             (clear-msg-pool-f))
-        (condition () (format
-                       t "Error: Cannot send message!~%")))))
+        (condition ()
+          (logging "clear-msg-pool-f: Cannot send message!")))))
 
 (defun irc-shutdown ()
   (tryto
@@ -305,8 +323,8 @@
           (send-irc-message msg)
         (condition (e)
           (progn
-            (format *stdout*
-                    "TG->IRC: can not send message! Reason: ~S~%" e)
+            (logging
+             "TG->IRC: can not send message! Reason: ~S" e)
             (push-msg-pool msg)))))))
 
 (defun tg-getupdate-loop ()
@@ -327,8 +345,7 @@
                      (process-tg-msg (car result-lst)))
                    result))
          (condition (e)
-           (progn (format *stdout*
-                          "TG-LOOP in trouble: ~S!~%" e)
+           (progn (logging "TG-LOOP in trouble: ~S!" e)
                   ;; prevent loop overheat
                   (sleep 2)))))))
 
@@ -339,38 +356,34 @@
 (defvar *irc-reconnect-counter* 0)
 
 (defun creat-watcher ()
-  (format *stdout* "Create IRC watcher~%")
+  (format *stdout* "Create IRC watcher")
   (setf *irc-watcher*
         (sb-thread:make-thread
          (lambda ()
            (loop
               (sleep 60)
-              (format *stdout* "Checking IRC Connection ...")
+              (logging "Checking IRC Connection ...")
               (if (irc-check-connection)
                   (progn
-                    (format *stdout* "OK!~%")
-                    (format *stdout* "Trying to clear Msg Pool~%")
+                    (logging "Connection OK!")
+                    (logging "Trying to clear Msg Pool")
                     (clear-msg-pool-f)
                     (setf *irc-reconnect-counter* 0))
                   (progn
-                    (format *stdout*
-                            "FAILED! RECONNECTING!~%")
+                    (logging "FAILED! RECONNECTING!")
                     (incf *irc-reconnect-counter*)
                     (if (> 20 *irc-reconnect-counter*)
                         (handler-case (progn (irc-reconnect)
                                              (clear-msg-pool-f))
                           (condition (e)
-                            (format *stdout*
-                                    "Having Trouble: ~S~%"
-                                    e)))
-                        (progn (format *stdout*
-                                       "~%Give up, Bot halt!~%")
+                            (logging "Having Trouble: ~S" e)))
+                        (progn (logging "Give up, Bot halt!")
                                (bot-halt)))))))
          :name "IRC-WATCHER")))
 
 (defun bot-start ()
   (irc-reconnect)
-  (format *stdout* "Creat TG LOOP~%")
+  (logging "Creat TG LOOP")
   (setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop
                                          :name "TG-LOOP"))
   (sleep 10)
