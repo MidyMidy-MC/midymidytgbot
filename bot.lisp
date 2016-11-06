@@ -175,7 +175,8 @@
 (defun irc-shutdown ()
   (tryto
    (part *irc-connection* *irc-channel* "Bot shutdown"))
-  (tryto (quit *irc-connection* "leaving")))
+  (tryto (quit *irc-connection* "leaving"))
+  (tryto (sb-thread:terminate-thread *irc-read-loop*)))
 
 (defun irc-check-connection ()
   (let ((t1 (get-internal-real-time)))
