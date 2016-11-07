@@ -235,6 +235,68 @@
   (= *tg-chat-id*
      (jget :id (jget :chat (jget :message update)))))
 
+(defun tg-is-photo? (update)
+  (if (jget :photo
+            (jget :message update)) t nil))
+
+(defun tg-get-photo-id (update)
+  (let ((file-lst (jget :photo
+                        (jget :message update))))
+    (setf file-lst ;; must less than 400KB
+          (remove-if (lambda (file)
+                       (> (jget :file--size file)
+                          (* 400 1024)))
+                     file-lst))
+    (jget :file--id
+          (car
+           (sort file-lst
+                 (lambda (a b)
+                   (> (jget :file--size a)
+                      (jget :file--size b))))))))
+
+(defun tg-get-file-path (file-id)
+  (jget :file--path
+        (jget :result
+              (decoded-tg-request
+               "getFile" `(("file_id" . ,file-id))))))
+;; (tg-get-file-path (tg-get-photo-id up))
+(defun tg-download-file (file-path)
+  (http-request
+   (concatenate 'string
+                "https://api.telegram.org/file/"
+                *tg-auth-str* "/"
+                file-path)))
+
+(defun upload-binary-file (byte-vector)
+  (let ((boundary (format nil "~A"
+                          (random 10000000000000)))
+        (str (make-str)))
+    (with-output-to-string (out str)
+      (write-line (format nil "--~A" boundary) out)
+      (write-line "Content-Disposition: form-data; name=\"image\"; filename=\"image\"" out)
+      (write-line "Content-Type: application/octet-stream" out)
+      (write-line "" out))
+    (let* ((sa (flexi-streams:string-to-octets
+                str :external-format '(:utf-8 :eol-style :crlf)))
+           (byte-stream (flexi-streams:make-in-memory-output-stream
+                         :element-type '(unsigned-byte 8))))
+      (write-sequence sa byte-stream)
+      (write-sequence byte-vector byte-stream)
+      (write-sequence (flexi-streams:string-to-octets
+                       (format nil "~%--~A--~%" boundary)
+                       :external-format '(:utf-8 :eol-style :crlf))
+                      byte-stream)
+      (let ((out (flexi-streams:get-output-stream-sequence
+                  byte-stream)))
+        (http-request
+         "https://img.vim-cn.com/"
+         :method :post
+         :content-type
+         (format nil
+                 "multipart/form-data; boundary=~A" boundary)
+         :content-length (length out)
+         :content out)))))
+
 (defun msgstr-tg->irc-list (update)
   (let ((first-name (jget :first--name
                           (jget :from (jget :message update))))
@@ -312,6 +374,20 @@
                  first-name ": "
                  emoji emoji emoji)))
 
+(defun msgstr-tgphoto->irc (update)
+  (let* ((img-vector (tg-download-file
+                      (tg-get-file-path
+                       (tg-get-photo-id update))))
+         (url (with-input-from-string
+                  (stream (upload-binary-file img-vector))
+                (read-line stream)))
+         (first-name
+          (jget :first--name
+                (jget :from (jget :message update)))))
+    (concatenate 'string
+                 first-name ": "
+                 "[ " url " ]")))
+
 (defun send-tg-message (str)
   (decoded-tg-request
    "sendMessage"
@@ -323,6 +399,7 @@
   (let ((msg-lst
          (cond
            ((tg-is-sticker? update) `(,(msgstr-tgsticker->irc update)))
+           ((tg-is-photo? update) `(,(msgstr-tgphoto->irc update)))
            ((tg-is-reply? update) (msgstr-tgreply->irc-list update))
            ((tg-is-message? update) (msgstr-tg->irc-list update)))))
     (dolist (msg msg-lst)
