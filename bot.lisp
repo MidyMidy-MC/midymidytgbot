@@ -11,14 +11,14 @@
   (cl:require :cl-json)
   (cl:require :flexi-streams))
 
-(load "./utils.lisp")
-
 (defpackage :midymidybot
   (:use :cl :cl-user :cl-irc :irc :drakma :json)
   (:export :bot-start
            :bot-shutdown))
 
 (in-package :midymidybot)
+(defvar *log-out* *standard-output*)
+(load "./utils.lisp")
 
 (defparameter *irc-channel* "#midymidybot")
 
@@ -30,12 +30,9 @@
 (defparameter *tg-bot-id* 258812230)
 
 (defparameter *irc-connection* nil)
-(defvar *stdout* *standard-output*)
 (defvar *ping-semaphore* (sb-thread:make-semaphore))
 (defparameter *irc-read-loop* nil)
 (defvar *tg-message-sender*)
-
-(defvar *log-out* *stdout*)
 
 (defun msg-user (msg)
   (source msg))
