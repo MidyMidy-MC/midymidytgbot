@@ -411,6 +411,12 @@
              "TG->IRC: can not send message! Reason: ~S" e)
             (push-msg-pool msg)))))))
 
+(defun tg-sort-result (result)
+  (sort result
+        (lambda (a b)
+          (< (jget :update--id a)
+             (jget :update--id b)))))
+
 (defun tg-getupdate-loop ()
   "Need a `overheat' protection"
   (let ((offset 0))
@@ -420,7 +426,8 @@
                              "getUpdates"
                              `(("offset" . ,offset)
                                ("timeout" . 17))))
-                  (result (jget :result response)))
+                  (result (tg-sort-result
+                           (jget :result response))))
              (mapl (lambda (result-lst)
                      (if (null (cdr result-lst))
                          (setf offset
