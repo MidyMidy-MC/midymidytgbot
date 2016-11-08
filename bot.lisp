@@ -14,7 +14,7 @@
 (defpackage :midymidybot
   (:use :cl :cl-user :cl-irc :irc :drakma :json)
   (:export :bot-start
-           :bot-shutdown))
+           :bot-halt))
 
 (in-package :midymidybot)
 (defvar *log-out* *standard-output*)
