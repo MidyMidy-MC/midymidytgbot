@@ -224,6 +224,9 @@
 (defun tg-is-message? (update)
   (if (jget :message update) t nil))
 
+(defun tg-is-text? (update)
+  (if (jget :text (jget :message update)) t nil))
+
 (defun tg-is-sticker? (update)
   (if (jget :sticker (jget :message update)) t nil))
 
