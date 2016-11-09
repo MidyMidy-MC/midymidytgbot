@@ -316,20 +316,35 @@
 (setf *tg-message-sender* #'send-tg-message)
 
 (defun process-tg-msg (update)
-  (let ((msg-lst
-         (cond
-           ((tg-is-sticker? update) `(,(msgstr-tgsticker->irc update)))
-           ((tg-is-photo? update) `(,(msgstr-tgphoto->irc update)))
-           ((tg-is-reply? update) (msgstr-tgreply->irc-list update))
-           ((tg-is-message? update) (msgstr-tg->irc-list update)))))
-    (dolist (msg msg-lst)
-      (handler-case
-          (send-irc-message msg)
-        (condition (e)
-          (progn
+  (if (tg-is-message? update) ; don't care about other data
+      ;; one-line: reply, photo, file, sticker
+      ;; multi-line: text
+      (let* ((reply    (if (tg-is-reply? update)
+                           (msgstr-tgreply->irc update)))
+             (photo    nil) ;; deal with it later
+             (file     nil) ;; deal with it later
+             (sticker  (if (tg-is-sticker? update)
+                           (msgstr-tgsticker->irc update)))
+             (text-lst (if (tg-is-text? update)
+                           (msgstr-tg->irc-list update)))
+             (result   nil))
+        (handler-case
+            (progn
+              (setf photo (if (tg-is-photo? update)
+                              (msgstr-tgphoto->irc update)))
+              (setf file nil))
+          (condition (e)
             (logging
-             "TG->IRC: can not send message! Reason: ~S" e)
-            (push-msg-pool msg)))))))
+             "process-tg-msg: trouble on uploading file: ~A"
+             e)))
+        (dolist (i result)
+          (handler-case
+              (send-irc-message i)
+            (condition (e)
+              (progn
+                (logging
+                 "process-tg-msg: trouble of sending msg: ~A"
+                 e))))))))
 
 (defun tg-sort-result (result)
   (sort result
