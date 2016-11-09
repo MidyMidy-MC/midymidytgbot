@@ -334,7 +334,7 @@
                             "......")
                reply-to-text)))
       (concatenate 'string
-                   (tg-update-repliee-first-name update)
+                   (tg-sender-first-name update)
                    ": "
                    "[ Re: " reply-to-text-cut " ]"))))
 
