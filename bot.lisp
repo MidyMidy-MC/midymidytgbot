@@ -315,6 +315,7 @@
              (if file (write-line file out))
              (if caption (write-line caption out))
              (if sticker (write-line sticker out))
+             (if other-media (write-line other-media out))
              (if text (write-string text out))
              out))))
     (if (= (tg-update-repliee-id update)
