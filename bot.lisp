@@ -217,9 +217,13 @@
                 *tg-auth-str* "/"
                 file-path)))
 
+(defun tg-sender-first-name (update)
+  (jget :first--name
+        (jget :from
+              (jget :message update))))
+
 (defun msgstr-tg->irc-list (update)
-  (let ((first-name (jget :first--name
-                          (jget :from (jget :message update))))
+  (let ((first-name (tg-sender-first-name update))
         (text (jget :text (jget :message update)))
         (str (make-str))
         (lst nil))
@@ -243,44 +247,17 @@
                          #\Space c)
                      out))))
 
-(defun tg-update-replier-id (update)
+(defun tg-update-repliee-id (update)
   (jget :id
         (jget :from
               (jget :reply--to--message
                     (jget :message update)))))
 
-(defun tg-update-replier-first-name (update)
+(defun tg-update-repliee-first-name (update)
   (jget :first--name
         (jget :from
               (jget :reply--to--message
                     (jget :message update)))))
-
-(defun msgstr-tgreply->irc-list (update)
-  (let* ((too-long 40)
-         (text-lst (msgstr-tg->irc-list update))
-         (reply-to
-          (remove-newline
-           (jget :text
-                 (jget :reply--to--message
-                       (jget :message update))))))
-    (if (= (tg-update-replier-id update) *tg-bot-id*)
-        nil
-        (setf reply-to
-              (concatenate
-               'string
-               (tg-update-replier-first-name update)
-               ": " reply-to)))
-    (let ((reply-to-sub
-           (if (> (length reply-to) too-long)
-               (concatenate 'string
-                            (subseq reply-to 0 too-long)
-                            "......")
-               reply-to)))
-      (setf (car text-lst)
-            (concatenate 'string
-                         "Re: [" reply-to-sub "] "
-                         (car text-lst)))
-      text-lst)))
 
 (defun msgstr-tgsticker->irc (update)
   (let ((first-name
@@ -307,6 +284,50 @@
     (concatenate 'string
                  first-name ": "
                  "[ " url " ]")))
+
+(defun msgstr-tgreply->irc (update)
+  "Transform only reply refer to irc, not text"
+  (let* ((too-long     40)
+         (dummy-update `(,(cons
+                           :message
+                           (jget :message update))))
+         (photo
+          (if (tg-is-photo? dummy-update)
+              "[ photo ]" nil))
+         (file nil)
+         (sticker
+          (if (tg-is-sticker? dummy-update)
+              (msgstr-tgsticker->irc dummy-update)
+              nil))
+         (reply-to-text
+          (remove-newline
+           (with-output-to-string (out)
+             (if photo (write-line photo out))
+             (if file (write-line file out))
+             (if sticker (write-line sticker out))
+             (write-string
+              (jget :text
+                    (jget :reply--to--message
+                          (jget :message update)))
+              out)))))
+    (if (= (tg-update-repliee-id update)
+           *tg-bot-id*)
+        nil ;; IRC msg or Bot info
+        (setf reply-to-text
+              (concatenate
+               'string
+               (tg-update-repliee-first-name update)
+               ": " reply-to-text)))
+    (let ((reply-to-text-cut
+           (if (> (length reply-to-text) too-long)
+               (concatenate 'string
+                            (subseq reply-to-text
+                                    0 too-long)
+                            "......")
+               reply-to-text)))
+      (concatenate 'string
+                   (tg-update-repliee-first-name update)
+                   "[ Re: " reply-to-text-cut " ]"))))
 
 (defun send-tg-message (str)
   (decoded-tg-request
@@ -337,6 +358,14 @@
             (logging
              "process-tg-msg: trouble on uploading file: ~A"
              e)))
+        (setf result
+              (append `(,reply ,photo ,file ,sticker)
+                      text-lst))
+        (if (not (or reply photo file sticker text-lst))
+            (setf result `(,(concatenate
+                             'string
+                             (tg-sender-first-name update)
+                             ": [ other media ]"))))
         (dolist (i result)
           (handler-case
               (send-irc-message i)
