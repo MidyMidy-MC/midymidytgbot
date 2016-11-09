@@ -278,19 +278,23 @@
          (url (with-input-from-string
                   (stream (upload-binary-file img-vector))
                 (read-line stream)))
+         (caption (jget :caption (jget :message update)))
          (first-name
           (jget :first--name
                 (jget :from (jget :message update)))))
     (concatenate 'string
                  first-name ": "
-                 "[ " url " ]")))
+                 "[ " url " ] " (if caption caption ""))))
 
 (defun msgstr-tgreply->irc (update)
   "Transform only reply refer to irc, not text"
+  (setf *reply-test* update)
   (let* ((too-long     40)
          (dummy-update `(,(cons
                            :message
-                           (jget :message update))))
+                           (jget
+                            :reply--to--message
+                            (jget :message update)))))
          (photo
           (if (tg-is-photo? dummy-update)
               "[ photo ]" nil))
@@ -299,20 +303,25 @@
           (if (tg-is-sticker? dummy-update)
               (msgstr-tgsticker->irc dummy-update)
               nil))
+         (caption (jget :caption
+                        (jget :message dummy-update)))
+         (text (jget :text
+                     (jget :message dummy-update)))
          (reply-to-text
           (remove-newline
            (with-output-to-string (out)
              (if photo (write-line photo out))
              (if file (write-line file out))
+             (if caption (write-line caption out))
              (if sticker (write-line sticker out))
-             (write-string
-              (jget :text
-                    (jget :reply--to--message
-                          (jget :message update)))
-              out)))))
+             (if text (write-string text out))
+             out))))
     (if (= (tg-update-repliee-id update)
            *tg-bot-id*)
-        nil ;; IRC msg or Bot info
+        (setf reply-to-text
+              (concatenate 'string
+                           "(IRC) "
+                           reply-to-text))
         (setf reply-to-text
               (concatenate
                'string
@@ -327,6 +336,7 @@
                reply-to-text)))
       (concatenate 'string
                    (tg-update-repliee-first-name update)
+                   ": "
                    "[ Re: " reply-to-text-cut " ]"))))
 
 (defun send-tg-message (str)
