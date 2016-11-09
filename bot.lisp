@@ -377,7 +377,7 @@
                              ": [ other media ]"))))
         (dolist (i result)
           (handler-case
-              (send-irc-message i)
+              (if i (send-irc-message i))
             (condition (e)
               (progn
                 (logging
