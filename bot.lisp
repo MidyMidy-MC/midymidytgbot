@@ -288,7 +288,6 @@
 
 (defun msgstr-tgreply->irc (update)
   "Transform only reply refer to irc, not text"
-  (setf *reply-test* update)
   (let* ((too-long     40)
          (dummy-update `(,(cons
                            :message
