@@ -20,13 +20,14 @@
 (defvar *log-out* *standard-output*)
 (load "./utils.lisp")
 
-(defparameter *irc-channel* "#midymidybot")
+(defparameter *irc-channel* "#MidyMidymc")
 
 (defparameter *tg-auth-str*
   (with-open-file (stream "./account_tg")
     (read-line stream)))
 
-(defparameter *tg-chat-id* -122773250)
+;;(defparameter *tg-chat-id* -122773250)
+(defparameter *tg-chat-id* -1001067573593)
 (defparameter *tg-bot-id* 258812230)
 
 (defparameter *irc-connection* nil)
