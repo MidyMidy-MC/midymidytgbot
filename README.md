@@ -9,8 +9,11 @@ MidyMidy社区的bot，用于在IRC频道和Telegram群之间传话。
 
 如果有需求，想要通用一点，同时用于多个频道，或是更便于配置，就提ISSUE吧，若是我闲得慌，可能会做。
 
+使用方法：
+
+`sbcl --load loader.lisp`
+
 TODO
 ----
 
-* 研究一下打包依赖包到本Repo的合法性，方便大家下载使用。
 * 寻找bug。
