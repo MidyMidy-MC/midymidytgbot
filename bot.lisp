@@ -189,6 +189,13 @@
   (if (jget :photo
             (jget :message update)) t nil))
 
+(defun tg-is-imageasfile? (update)
+  (let ((doc (jget :document (jget :message update))))
+    (if doc
+        (string-begin-with
+         "image"
+         (jget :mime--type doc)))))
+
 (defun tg-get-photo-id (update)
   (let ((file-lst (jget :photo
                         (jget :message update))))
@@ -197,6 +204,8 @@
                        (> (jget :file--size file)
                           (* 400 1024)))
                      file-lst))
+    (if (null file-lst)
+        (error "ERROR: tg-get-photo-id: no suitable sized file"))
     (jget :file--id
           (car
            (sort file-lst
@@ -223,22 +232,17 @@
               (jget :message update))))
 
 (defun msgstr-tg->irc-list (update)
-  (let ((first-name (tg-sender-first-name update))
-        (text (jget :text (jget :message update)))
+  (let ((text (jget :text (jget :message update)))
         (str (make-str))
         (lst nil))
-    (labels ((make-msg (str)
-               (concatenate 'string first-name ": " str)))
-      (loop for c across text do
-           (if (not (equal #\Newline c))
-               (with-output-to-string (out str)
-                 (write-char c out))
-               (progn (push (make-msg str) lst)
-                      (setf str (make-str)))))
-      (if (= 0 (length str))
-          nil
-          (push (make-msg str) lst))
-      (reverse lst))))
+    (loop for c across text do
+         (if (not (equal #\Newline c))
+             (with-output-to-string (out str)
+               (write-char c out))
+             (progn (push str lst)
+                    (setf str (make-str)))))
+    (push str lst)
+    (reverse lst)))
 
 (defun remove-newline (str)
   (with-output-to-string (out)
@@ -260,15 +264,11 @@
                     (jget :message update)))))
 
 (defun msgstr-tgsticker->irc (update)
-  (let ((first-name
-         (jget :first--name
-               (jget :from (jget :message update))))
-        (emoji
+  (let ((emoji
          (jget :emoji
                (jget :sticker
                      (jget :message update)))))
     (concatenate 'string
-                 first-name ": "
                  emoji emoji emoji)))
 
 (defun msgstr-tgphoto->irc (update)
@@ -278,13 +278,29 @@
          (url (with-input-from-string
                   (stream (upload-binary-file img-vector))
                 (read-line stream)))
-         (caption (jget :caption (jget :message update)))
-         (first-name
-          (jget :first--name
-                (jget :from (jget :message update)))))
+         (caption (jget :caption (jget :message update))))
     (concatenate 'string
-                 first-name ": "
                  "[ " url " ] " (if caption caption ""))))
+
+(defun msgstr-tgimageasfile->irc (update)
+  ;; check sieze
+  (if (> (jget :file--size (jget :document
+                                 (jget :message update)))
+         (* 600 1024))
+      "[ image > 600KB ]"
+      (let* ((img-vector
+              (tg-download-file
+               (tg-get-file-path
+                (jget :file--id
+                      (jget :document
+                            (jget :message update))))))
+             (url
+              (with-input-from-string
+                  (stream (upload-binary-file img-vector))
+                (read-line stream)))
+             (caption (jget :caption (jget :message update))))
+        (concatenate 'string
+                     "[ " url " ] " (if caption caption)))))
 
 (defun msgstr-tgreply->irc (update)
   "Transform only reply refer to irc, not text"
@@ -297,7 +313,9 @@
          (photo
           (if (tg-is-photo? dummy-update)
               "[ photo ]" nil))
-         (file nil)
+         (file (if (jget :document
+                         (jget :message dummy-update))
+                   "[ file ]" nil))
          (sticker
           (if (tg-is-sticker? dummy-update)
               (msgstr-tgsticker->irc dummy-update)
@@ -337,8 +355,6 @@
                             "......")
                reply-to-text)))
       (concatenate 'string
-                   (tg-sender-first-name update)
-                   ": "
                    "[ Re: " reply-to-text-cut " ]"))))
 
 (defun send-tg-message (str)
@@ -365,7 +381,8 @@
             (progn
               (setf photo (if (tg-is-photo? update)
                               (msgstr-tgphoto->irc update)))
-              (setf file nil))
+              (setf file (if (tg-is-imageasfile? update)
+                             (msgstr-tgimageasfile->irc update))))
           (condition (e)
             (logging
              "process-tg-msg: trouble on uploading file: ~A"
@@ -374,13 +391,13 @@
               (append `(,reply ,photo ,file ,sticker)
                       text-lst))
         (if (not (or reply photo file sticker text-lst))
-            (setf result `(,(concatenate
-                             'string
-                             (tg-sender-first-name update)
-                             ": [ other media ]"))))
+            (setf result `("[ other media ]")))
         (dolist (i result)
           (handler-case
-              (if i (send-irc-message i))
+              (if i (send-irc-message
+                     (concatenate 'string
+                                  (tg-sender-first-name update)
+                                  ": " i)))
             (condition (e)
               (progn
                 (logging

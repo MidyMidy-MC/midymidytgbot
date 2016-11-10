@@ -1,5 +1,11 @@
 (in-package :midymidybot)
 
+(defun string-begin-with (match string)
+  (let ((len (length match)))
+    (and (>= (length string) len)
+         (string= match
+                  (subseq string 0 len)))))
+
 (defun time-str ()
   (multiple-value-bind
         (ss mm hh d m)
