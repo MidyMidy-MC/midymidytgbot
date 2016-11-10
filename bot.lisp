@@ -322,10 +322,10 @@
               nil))
          (caption (jget :caption
                         (jget :message dummy-update)))
-         (other-media (if (not (or photo file sticker))
-                          "[ other media ]"))
          (text (jget :text
                      (jget :message dummy-update)))
+         (other-media (if (not (or photo file sticker text))
+                          "[ other media ]"))
          (reply-to-text
           (remove-newline
            (with-output-to-string (out)
