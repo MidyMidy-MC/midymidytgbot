@@ -280,7 +280,7 @@
                (jget :sticker
                      (jget :message update)))))
     (concatenate 'string
-                 emoji emoji emoji)))
+                 "[ Sticker: " emoji " ]")))
 
 (defun msgstr-tgphoto->irc (bot update)
   (let* ((img-vector
