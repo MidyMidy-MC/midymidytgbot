@@ -466,6 +466,7 @@
 
 (defun creat-watcher-f (bot)
   (logging "Create IRC watcher")
+  (setf (bot-irc-ping-semaphore bot) (sb-thread:make-semaphore))
   (setf (bot-thread-irc-watcher bot)
         (sb-thread:make-thread
          (lambda ()
@@ -505,6 +506,7 @@
 (defun bot-start (config)
   (let ((bot (make-bot)))
     (bot-load-conf bot config)
+    (init-bot-irc-msg-pool bot)
     (irc-reconnect bot)
     (logging "Creat TG LOOP")
     (setf (bot-thread-tg-loop bot)
