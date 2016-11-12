@@ -508,7 +508,8 @@
                                    (tg-getupdate-loop bot))
                                  :name "TG-LOOP"))
     (sleep 10)
-    (create-watcher-f bot)))
+    (create-watcher-f bot)
+    bot))
 
 (defun bot-halt (bot)
   (tryto (irc-shutdown bot))
