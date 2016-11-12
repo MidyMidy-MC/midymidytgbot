@@ -399,7 +399,10 @@
                               (msgstr-tgphoto->irc bot update)))
               (setf file (if (tg-is-imageasfile? update)
                              (msgstr-tgimageasfile->irc
-                              bot update))))
+                              bot update)
+                             (if (jget :document
+                                       (jget :message update))
+                                 "[ file ]" nil))))
           (condition (e)
             (logging
              "process-tg-msg: trouble on uploading file: ~A"
