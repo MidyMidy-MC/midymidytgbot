@@ -100,7 +100,7 @@
   (sleep 5)
   (logging "Connecting to IRC")
   (setf (bot-irc-connection bot)
-        (connect :nickname "MidyMidyTGBot"
+        (connect :nickname (bot-irc-name bot)
                  :server "irc.freenode.net"))
   (logging "JOIN CHANNEL")
   (join (bot-irc-connection bot) (bot-irc-channel bot))
@@ -164,7 +164,7 @@
 
 ;;;; -----------------------------------------
 
-(defun tg-request (method-name bot &optional parameters)
+(defun tg-request (bot method-name &optional parameters)
   (let ((http-method (if parameters :post :get)))
     (flexi-streams:octets-to-string
      (http-request
@@ -444,6 +444,7 @@
     (loop
        (handler-case
            (let* ((response (decoded-tg-request
+                             bot
                              "getUpdates"
                              `(("offset" . ,offset)
                                ("timeout" . 17))))
@@ -462,9 +463,6 @@
                   (sleep 2)))))))
 
 ;;;;------------------------------------------------
-
-(defparameter *tg-loop* nil)
-(defparameter *irc-watcher* nil)
 
 (defun creat-watcher-f (bot)
   (logging "Create IRC watcher")
@@ -494,8 +492,19 @@
                                  (bot-halt))))))))
          :name "IRC-WATCHER")))
 
-(defun bot-start ()
+(defun bot-load-conf (bot config)
+  (let ((irc-conf (jget :irc config))
+        (tg-conf (jget :tg config)))
+    (setf (bot-irc-name bot) (jget :username irc-conf))
+    (setf (bot-irc-channel bot) (jget :channel irc-conf))
+    (setf (bot-tg-bot-id bot) (jget :bot-id tg-conf))
+    (setf (bot-tg-bot-authstr bot) (jget :bot-token tg-conf))
+    (setf (bot-tg-chat-id bot) (jget :chat-id tg-conf))
+    t))
+
+(defun bot-start (config)
   (let ((bot (make-bot)))
+    (bot-load-conf bot config)
     (irc-reconnect bot)
     (logging "Creat TG LOOP")
     (setf (bot-thread-tg-loop bot)
@@ -509,5 +518,4 @@
   (tryto (sb-thread:terminate-thread (bot-thread-tg-loop bot)))
   (tryto (sb-thread:terminate-thread (bot-thread-irc-watcher bot)))
   (tryto (irc-shutdown bot)))
-
 
