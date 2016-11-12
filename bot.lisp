@@ -457,7 +457,7 @@
 
 ;;;;------------------------------------------------
 
-(defun creat-watcher-f (bot)
+(defun create-watcher-f (bot)
   (logging "Create IRC watcher")
   (setf (bot-thread-irc-watcher bot)
         (sb-thread:make-thread
@@ -508,7 +508,7 @@
                                    (tg-getupdate-loop bot))
                                  :name "TG-LOOP"))
     (sleep 10)
-    (creat-watcher-f bot)))
+    (create-watcher-f bot)))
 
 (defun bot-halt (bot)
   (tryto (irc-shutdown bot))
