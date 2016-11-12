@@ -20,20 +20,39 @@
 (defvar *log-out* *standard-output*)
 (load "./utils.lisp")
 
-(defparameter *irc-channel* "#MidyMidymc")
+(defstruct bot
+  irc-name
+  irc-passwd
+  irc-channel
+  irc-connection
+  irc-ping-semaphore
+  irc-message-pool-head
+  irc-message-pool-tail
+  irc-message-pool-lock
+  irc-reconnect-counter
 
-(defparameter *tg-auth-str*
-  (with-open-file (stream "./account_tg")
-    (read-line stream)))
+  tg-bot-id
+  tg-bot-authstr
+  tg-chat-id
 
-;;(defparameter *tg-chat-id* -122773250)
-(defparameter *tg-chat-id* -1001067573593)
-(defparameter *tg-bot-id* 258812230)
+  thread-irc-read-loop
+  thread-irc-watcher
+  thread-tg-loop)
 
-(defparameter *irc-connection* nil)
-(defvar *ping-semaphore* (sb-thread:make-semaphore))
-(defparameter *irc-read-loop* nil)
-(defvar *tg-message-sender*)
+
+;; (defparameter *irc-channel* "#MidyMidymc")
+
+;; (defparameter *tg-auth-str*
+;;   (with-open-file (stream "./account_tg")
+;;     (read-line stream)))
+
+;; (defparameter *tg-chat-id* -1001067573593)
+;; (defparameter *tg-bot-id* 258812230)
+
+;; (defparameter *irc-connection* nil)
+;; (defvar *ping-semaphore* (sb-thread:make-semaphore))
+;; (defparameter *irc-read-loop* nil)
+;; (defvar *tg-message-sender*)
 
 (defun msg-user (msg)
   (source msg))
@@ -50,106 +69,108 @@
 (defun msgstr-irc->tg (msg)
   (concatenate 'string (msg-user msg) ": " (msg-body msg)))
 
-(defun send-irc-message (str)
-  (privmsg *irc-connection* *irc-channel*
+(defun send-irc-message (bot str)
+  (privmsg (bot-irc-connection bot)
+           (bot-irc-channel bot)
            (correct-cljson-surrogate-pairs str)))
 
-(defvar *irc-message-pool-head* (list :head))
-(defvar *irc-message-pool-tail* *irc-message-pool-head*)
-(defvar *irc-message-pool-lock*
-  (sb-thread:make-mutex
-   :name "irc message pool lock"))
+(defun init-bot-irc-msg-pool (bot)
+  (setf (bot-irc-message-pool-head bot) (list :head))
+  (setf (bot-irc-message-pool-tail bot)
+        (bot-irc-message-pool-head bot))
+  (setf (bot-irc-message-pool-lock bot)
+        (sb-thread:make-mutex
+         :name "bot-irc-message-pool-lock")))
 
-(defun push-msg-pool (str)
-  (sb-thread:with-mutex (*irc-message-pool-lock*)
+(defun push-msg-pool (str bot)
+  (sb-thread:with-mutex ((bot-irc-message-pool-lock bot))
     (let ((new (list str)))
-      (setf (cdr *irc-message-pool-tail*) new)
-      (setf *irc-message-pool-tail* new))))
-
-(defun irc-message-hook (msg)
-  (if (string= *irc-channel*
-               (msg-channel msg))
-      (funcall *tg-message-sender*
-               (msgstr-irc->tg msg))
-      nil))
+      (setf (cdr (bot-irc-message-pool-tail bot)) new)
+      (setf (bot-irc-message-pool-tail bot) new))))
 
 ;; supress warning
 (defun bot-halt ())
-(defun send-tg-message (str) str)
-(defun irc-check-connection ())
-(defun irc-reconnect (&optional (callback nil))
-  (tryto (remove-all-hooks *irc-connection*))
-  (tryto (quit *irc-connection*))
-  (tryto (sb-thread:terminate-thread *irc-read-loop*))
+(defun send-tg-message (bot str) bot str)
+(defun irc-check-connection (bot) bot)
+(defun irc-reconnect (bot &optional (callback nil))
+  (tryto (remove-all-hooks (bot-irc-connection bot)))
+  (tryto (quit (bot-irc-connection bot)))
+  (tryto (sb-thread:terminate-thread
+          (bot-thread-irc-read-loop bot)))
   (sleep 5)
   (logging "Connecting to IRC")
-  (setf *irc-connection*
+  (setf (bot-irc-connection bot)
         (connect :nickname "MidyMidyTGBot"
                  :server "irc.freenode.net"))
   (logging "JOIN CHANNEL")
-  (join *irc-connection* *irc-channel*)
+  (join (bot-irc-connection bot) (bot-irc-channel bot))
   (logging "ADD HOOKS")
-  (add-hook *irc-connection*
+  (add-hook (bot-irc-connection bot)
             'irc::irc-privmsg-message
-            #'irc-message-hook)
-  (add-hook *irc-connection*
+            (lambda (msg)
+              (if (string= (bot-irc-channel bot)
+                           (msg-channel msg))
+                  (send-tg-message bot
+                                   (msgstr-irc->tg msg)))))
+  (add-hook (bot-irc-connection bot)
             'irc::irc-pong-message
             (lambda (msg)
               (declare (ignore msg))
               (sb-thread:signal-semaphore
-               *ping-semaphore*)))
+               (bot-irc-ping-semaphore bot))))
   (logging "ACTIVATE IRC-READ-LOOP")
-  (setf *irc-read-loop*
+  (setf (bot-thread-irc-read-loop bot)
         (sb-thread:make-thread
          (lambda ()
-           (read-message-loop *irc-connection*))
+           (read-message-loop (bot-irc-connection bot)))
          :name "IRC-READ-LOOP"))
-  ;;(start-background-message-handler *irc-connection*)
   (if callback
       (funcall callback)))
 
-(defun clear-msg-pool-f ()
-  (if (cdr *irc-message-pool-head*)
+(defun clear-msg-pool-f (bot)
+  (if (cdr (bot-irc-message-pool-head bot))
       (handler-case
           (progn
             (send-irc-message
-             (cadr *irc-message-pool-head*))
-            (setf (cdr *irc-message-pool-head*)
-                  (cddr *irc-message-pool-head*))
-            (clear-msg-pool-f))
+             bot
+             (cadr (bot-irc-message-pool-head bot)))
+            (setf (cdr (bot-irc-message-pool-head bot))
+                  (cddr (bot-irc-message-pool-head bot)))
+            (clear-msg-pool-f bot))
         (condition ()
-          (logging "clear-msg-pool-f: Cannot send message!")))))
+          (logging "clear-msg-pool-f: Can NOT send irc msg, give up!")))))
 
-(defun irc-shutdown ()
+(defun irc-shutdown (bot)
   (tryto
-   (part *irc-connection* *irc-channel* "Bot shutdown"))
-  (tryto (quit *irc-connection* "leaving"))
-  (tryto (sb-thread:terminate-thread *irc-read-loop*)))
+   (part (bot-irc-connection bot)
+         (bot-irc-channel bot) "Bot shutdown"))
+  (tryto (quit (bot-irc-connection bot) "leaving"))
+  (tryto (sb-thread:terminate-thread (bot-thread-irc-read-loop bot))))
 
-(defun irc-check-connection ()
+(defun irc-check-connection (bot)
   (let ((t1 (get-internal-real-time)))
-    (tryto (ping *irc-connection* *irc-channel*))
+    (tryto (ping (bot-irc-connection bot) (bot-irc-channel bot)))
     (if (sb-thread:wait-on-semaphore
-         *ping-semaphore* :timeout 20)
+         (bot-irc-ping-semaphore bot) :timeout 20)
         (let ((time-elapse
                (float (/ (- (get-internal-real-time) t1)
                          internal-time-units-per-second))))
-          (setf *ping-semaphore*
+          (setf (bot-irc-ping-semaphore bot)
                 (sb-thread:make-semaphore))
           time-elapse)
-        (progn (setf *ping-semaphore*
+        (progn (setf (bot-irc-ping-semaphore bot)
                      (sb-thread:make-semaphore))
                nil))))
 
 ;;;; -----------------------------------------
 
-(defun tg-request (method-name &optional parameters)
+(defun tg-request (method-name bot &optional parameters)
   (let ((http-method (if parameters :post :get)))
     (flexi-streams:octets-to-string
      (http-request
       (concatenate 'string
                    "https://api.telegram.org/"
-                   *tg-auth-str* "/"
+                   (bot-tg-bot-authstr bot) "/"
                    method-name)
       :connection-timeout 100
       :method http-method
@@ -159,9 +180,9 @@
                      (encode-json parameters stream))))
      :external-format '(:utf-8 :eol-style :crlf))))
 
-(defun decoded-tg-request (method-name &optional parameters)
+(defun decoded-tg-request (bot method-name &optional parameters)
   (with-input-from-string
-      (stream (tg-request method-name parameters))
+      (stream (tg-request bot method-name parameters))
     (decode-json stream)))
 
 (defun jget (tag decoded-json)
@@ -182,8 +203,8 @@
   (if (jget :reply--to--message
             (jget :message update)) t nil))
 
-(defun tg-is-our-chat? (update)
-  (= *tg-chat-id*
+(defun tg-is-our-chat? (bot update)
+  (= (bot-tg-chat-id bot)
      (jget :id (jget :chat (jget :message update)))))
 
 (defun tg-is-photo? (update)
@@ -214,17 +235,16 @@
                    (> (jget :file--size a)
                       (jget :file--size b))))))))
 
-(defun tg-get-file-path (file-id)
+(defun tg-get-file-path (bot file-id)
   (jget :file--path
         (jget :result
-              (decoded-tg-request
-               "getFile" `(("file_id" . ,file-id))))))
-;; (tg-get-file-path (tg-get-photo-id up))
-(defun tg-download-file (file-path)
+              (decoded-tg-request bot
+                                  "getFile" `(("file_id" . ,file-id))))))
+(defun tg-download-file (bot file-path)
   (http-request
    (concatenate 'string
                 "https://api.telegram.org/file/"
-                *tg-auth-str* "/"
+                (bot-tg-bot-authstr bot) "/"
                 file-path)))
 
 (defun tg-sender-first-name (update)
@@ -272,10 +292,13 @@
     (concatenate 'string
                  emoji emoji emoji)))
 
-(defun msgstr-tgphoto->irc (update)
-  (let* ((img-vector (tg-download-file
-                      (tg-get-file-path
-                       (tg-get-photo-id update))))
+(defun msgstr-tgphoto->irc (bot update)
+  (let* ((img-vector
+          (tg-download-file
+           bot
+           (tg-get-file-path
+            bot
+            (tg-get-photo-id update))))
          (url (with-input-from-string
                   (stream (upload-binary-file img-vector))
                 (read-line stream)))
@@ -283,7 +306,7 @@
     (concatenate 'string
                  "[ " url " ] " (if caption caption ""))))
 
-(defun msgstr-tgimageasfile->irc (update)
+(defun msgstr-tgimageasfile->irc (bot update)
   ;; check sieze
   (if (> (jget :file--size (jget :document
                                  (jget :message update)))
@@ -291,7 +314,9 @@
       "[ image > 600KB ]"
       (let* ((img-vector
               (tg-download-file
+               bot
                (tg-get-file-path
+                bot
                 (jget :file--id
                       (jget :document
                             (jget :message update))))))
@@ -303,7 +328,7 @@
         (concatenate 'string
                      "[ " url " ] " (if caption caption)))))
 
-(defun msgstr-tgreply->irc (update)
+(defun msgstr-tgreply->irc (bot update)
   "Transform only reply refer to irc, not text"
   (let* ((too-long     40)
          (dummy-update `(,(cons
@@ -338,7 +363,7 @@
              (if text (write-string text out))
              out))))
     (if (= (tg-update-repliee-id update)
-           *tg-bot-id*)
+           (bot-tg-bot-id bot))
         (setf reply-to-text
               (concatenate 'string
                            "(IRC) "
@@ -358,19 +383,19 @@
       (concatenate 'string
                    "[ Re: " reply-to-text-cut " ]"))))
 
-(defun send-tg-message (str)
+(defun send-tg-message (bot str)
   (decoded-tg-request
+   bot
    "sendMessage"
-   `(("chat_id" . ,*tg-chat-id*)
+   `(("chat_id" . ,(bot-tg-chat-id bot))
      ("text" . ,str))))
-(setf *tg-message-sender* #'send-tg-message)
 
-(defun process-tg-msg (update)
+(defun process-tg-msg (bot update)
   (if (tg-is-message? update) ; don't care about other data
       ;; one-line: reply, photo, file, sticker
       ;; multi-line: text
       (let* ((reply    (if (tg-is-reply? update)
-                           (msgstr-tgreply->irc update)))
+                           (msgstr-tgreply->irc bot update)))
              (photo    nil) ;; deal with it later
              (file     nil) ;; deal with it later
              (sticker  (if (tg-is-sticker? update)
@@ -381,9 +406,10 @@
         (handler-case
             (progn
               (setf photo (if (tg-is-photo? update)
-                              (msgstr-tgphoto->irc update)))
+                              (msgstr-tgphoto->irc bot update)))
               (setf file (if (tg-is-imageasfile? update)
-                             (msgstr-tgimageasfile->irc update))))
+                             (msgstr-tgimageasfile->irc
+                              bot update))))
           (condition (e)
             (logging
              "process-tg-msg: trouble on uploading file: ~A"
@@ -396,6 +422,7 @@
         (dolist (i result)
           (handler-case
               (if i (send-irc-message
+                     bot
                      (concatenate 'string
                                   (tg-sender-first-name update)
                                   ": " i)))
@@ -411,7 +438,7 @@
           (< (jget :update--id a)
              (jget :update--id b)))))
 
-(defun tg-getupdate-loop ()
+(defun tg-getupdate-loop (bot)
   "Need a `overheat' protection"
   (let ((offset 0))
     (loop
@@ -427,7 +454,7 @@
                          (setf offset
                                (1+ (jget :update--id
                                          (car result-lst)))))
-                     (process-tg-msg (car result-lst)))
+                     (process-tg-msg bot (car result-lst)))
                    result))
          (condition (e)
            (progn (logging "TG-LOOP in trouble: ~S!" e)
@@ -438,29 +465,29 @@
 
 (defparameter *tg-loop* nil)
 (defparameter *irc-watcher* nil)
-(defvar *irc-reconnect-counter* 0)
 
-(defun creat-watcher ()
+(defun creat-watcher-f (bot)
   (logging "Create IRC watcher")
-  (setf *irc-watcher*
+  (setf (bot-thread-irc-watcher bot)
         (sb-thread:make-thread
          (lambda ()
            (loop
               (sleep 60)
               (logging "Checking IRC Connection ...")
-              (let ((delay (irc-check-connection)))
+              (let ((delay (irc-check-connection bot)))
                 (if delay
                     (progn
                       (logging "OK! Ping delay: ~As" delay)
                       (logging "Trying to clear Msg Pool")
-                      (clear-msg-pool-f)
-                      (setf *irc-reconnect-counter* 0))
+                      (clear-msg-pool-f bot)
+                      (setf (bot-irc-reconnect-counter bot) 0))
                     (progn
                       (logging "FAILED! RECONNECTING!")
-                      (incf *irc-reconnect-counter*)
-                      (if (> 20 *irc-reconnect-counter*)
-                          (handler-case (progn (irc-reconnect)
-                                               (clear-msg-pool-f))
+                      (incf (bot-irc-reconnect-counter bot))
+                      (if (> 20 (bot-irc-reconnect-counter bot))
+                          (handler-case
+                              (progn (irc-reconnect bot)
+                                     (clear-msg-pool-f bot))
                             (condition (e)
                               (logging "Having Trouble: ~S" e)))
                           (progn (logging "Give up, Bot halt!")
@@ -468,15 +495,19 @@
          :name "IRC-WATCHER")))
 
 (defun bot-start ()
-  (irc-reconnect)
-  (logging "Creat TG LOOP")
-  (setf *tg-loop* (sb-thread:make-thread #'tg-getupdate-loop
-                                         :name "TG-LOOP"))
-  (sleep 10)
-  (creat-watcher))
+  (let ((bot (make-bot)))
+    (irc-reconnect bot)
+    (logging "Creat TG LOOP")
+    (setf (bot-thread-tg-loop bot)
+          (sb-thread:make-thread (lambda ()
+                                   (tg-getupdate-loop bot))
+                                 :name "TG-LOOP"))
+    (sleep 10)
+    (creat-watcher-f bot)))
 
-(defun bot-halt ()
-  (tryto (sb-thread:terminate-thread *tg-loop*))
-  (tryto (sb-thread:terminate-thread *irc-watcher*))
-  (tryto (irc-shutdown)))
+(defun bot-halt (bot)
+  (tryto (sb-thread:terminate-thread (bot-thread-tg-loop bot)))
+  (tryto (sb-thread:terminate-thread (bot-thread-irc-watcher bot)))
+  (tryto (irc-shutdown bot)))
+
 
