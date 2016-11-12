@@ -12,10 +12,12 @@ MidyMidy社区的bot，用于在IRC频道和Telegram群之间传话。
 使用方法
 --------
 
+* 下载一个Steel Bank Common Lisp，(Debian: `sudo apt install sbcl`)
 * 开启你的Bot的消息访问权限，然后把它加到群里。
-* 在这个程序根目录下创建一个account_tg，在里面写`bot[token]`，如：`bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`
-* 在bot.lisp里面，设置好你们Telegram群的ID，你Bot的ID，你们IRC的频道，Bot的IRC名字。
-* 最后：`sbcl --load loader.lisp`
+* 观察`start_example.lisp`文件，创建你自己的启动配置文件
+* 在irc那一栏中填入你bot的在IRC上的名字，和要加入的IRC频道（只能填一个）
+* 在tg那一栏中，填入你Telegram Bot的ID，和`bot<token>`，如：`bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`，以及群号（是一个负数）
+* 执行命令：`sbcl --load start_example.lisp`
 
 TODO
 ----
