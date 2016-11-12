@@ -21,40 +21,26 @@
 (load "./utils.lisp")
 
 (defstruct bot
-  (irc-name nil :type string)
-  (irc-passwd nil :type string)
-  (irc-channel nil :type string)
+  (irc-name "" :type string)
+  irc-passwd
+  (irc-channel "" :type string)
   irc-connection
   (irc-ping-semaphore (sb-thread:make-semaphore)
                       :type sb-thread:semaphore)
-  (irc-message-pool-head nil :type cons)
-  (irc-message-pool-tail nil :type cons)
+  irc-message-pool-head
+  irc-message-pool-tail
   (irc-message-pool-lock
    (sb-thread:make-mutex)
    :type sb-thread:mutex)
   (irc-reconnect-counter 0 :type integer)
 
   (tg-bot-id nil :type integer)
-  (tg-bot-authstr nil :type string)
+  (tg-bot-authstr "" :type string)
   (tg-chat-id nil :type integer)
 
-  (thread-irc-read-loop nil :type sb-thread:thread)
-  (thread-irc-watcher nil :type sb-thread:thread)
-  (thread-tg-loop nil :type sb-thread:thread))
-
-;; (defparameter *irc-channel* "#MidyMidymc")
-
-;; (defparameter *tg-auth-str*
-;;   (with-open-file (stream "./account_tg")
-;;     (read-line stream)))
-
-;; (defparameter *tg-chat-id* -1001067573593)
-;; (defparameter *tg-bot-id* 258812230)
-
-;; (defparameter *irc-connection* nil)
-;; (defvar *ping-semaphore* (sb-thread:make-semaphore))
-;; (defparameter *irc-read-loop* nil)
-;; (defvar *tg-message-sender*)
+  thread-irc-read-loop
+  thread-irc-watcher
+  thread-tg-loop)
 
 (defun msg-user (msg)
   (source msg))
@@ -496,21 +482,22 @@
                                  (bot-halt bot))))))))
          :name "IRC-WATCHER")))
 
-(defun bot-load-conf (bot config)
-  (let ((irc-conf (jget :irc config))
-        (tg-conf (jget :tg config)))
-    (setf (bot-irc-name bot) (jget :username irc-conf))
-    (setf (bot-irc-channel bot) (jget :channel irc-conf))
-    (setf (bot-tg-bot-id bot) (jget :bot-id tg-conf))
-    (setf (bot-tg-bot-authstr bot) (jget :bot-token tg-conf))
-    (setf (bot-tg-chat-id bot) (jget :chat-id tg-conf))
-    (setf (bot-irc-reconnect-counter bot) 0)
-    t))
+(defun bot-load-conf (config)
+  (let* ((irc-conf (jget :irc config))
+         (tg-conf (jget :tg config))
+         (bot
+          (make-bot :irc-name (jget :username irc-conf)
+                    :irc-passwd (jget :passwd irc-conf)
+                    :irc-channel (jget :channel irc-conf)
+                    :tg-bot-id (jget :bot-id tg-conf)
+                    :tg-bot-authstr (jget :bot-token tg-conf)
+                    :tg-chat-id (jget :chat-id tg-conf)
+                    :irc-reconnect-counter 0)))
+    (init-bot-irc-msg-pool bot)
+    bot))
 
 (defun bot-start (config)
-  (let ((bot (make-bot)))
-    (bot-load-conf bot config)
-    (init-bot-irc-msg-pool bot)
+  (let ((bot (bot-load-conf config)))
     (irc-reconnect bot)
     (logging "Creat TG LOOP")
     (setf (bot-thread-tg-loop bot)
@@ -523,5 +510,5 @@
 (defun bot-halt (bot)
   (tryto (irc-shutdown bot))
   (tryto (sb-thread:terminate-thread (bot-thread-irc-watcher bot)))
-  (tryto (sb-thread:terminate-thread (bot-thread-irc-read-loop)))
+  (tryto (sb-thread:terminate-thread (bot-thread-irc-read-loop bot)))
   (tryto (sb-thread:terminate-thread (bot-thread-tg-loop bot))))
