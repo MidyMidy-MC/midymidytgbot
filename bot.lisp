@@ -21,24 +21,26 @@
 (load "./utils.lisp")
 
 (defstruct bot
-  irc-name
-  irc-passwd
-  irc-channel
+  (irc-name nil :type string)
+  (irc-passwd nil :type string)
+  (irc-channel nil :type string)
   irc-connection
-  irc-ping-semaphore
-  irc-message-pool-head
-  irc-message-pool-tail
-  irc-message-pool-lock
-  irc-reconnect-counter
+  (irc-ping-semaphore (sb-thread:make-semaphore)
+                      :type sb-thread:semaphore)
+  (irc-message-pool-head nil :type cons)
+  (irc-message-pool-tail nil :type cons)
+  (irc-message-pool-lock
+   (sb-thread:make-mutex)
+   :type sb-thread:mutex)
+  (irc-reconnect-counter 0 :type integer)
 
-  tg-bot-id
-  tg-bot-authstr
-  tg-chat-id
+  (tg-bot-id nil :type integer)
+  (tg-bot-authstr nil :type string)
+  (tg-chat-id nil :type integer)
 
-  thread-irc-read-loop
-  thread-irc-watcher
-  thread-tg-loop)
-
+  (thread-irc-read-loop nil :type sb-thread:thread)
+  (thread-irc-watcher nil :type sb-thread:thread)
+  (thread-tg-loop nil :type sb-thread:thread))
 
 ;; (defparameter *irc-channel* "#MidyMidymc")
 
@@ -88,8 +90,25 @@
       (setf (cdr (bot-irc-message-pool-tail bot)) new)
       (setf (bot-irc-message-pool-tail bot) new))))
 
+(defun clear-msg-pool-f (bot)
+  (sb-thread:with-mutex ((bot-irc-message-pool-lock bot))
+    (if (cdr (bot-irc-message-pool-head bot))
+        (handler-case
+            (progn
+              (send-irc-message
+               bot
+               (cadr (bot-irc-message-pool-head bot)))
+              (setf (cdr (bot-irc-message-pool-head bot))
+                    (cddr (bot-irc-message-pool-head bot)))
+              (clear-msg-pool-f bot))
+          (condition ()
+            (logging "clear-msg-pool-f: Can NOT send irc msg, give up!")))
+        ;; finish, reset tail
+        (setf (bot-irc-message-pool-tail bot)
+              (bot-irc-message-pool-head bot)))))
+
 ;; supress warning
-(defun bot-halt ())
+(defun bot-halt (bot) bot)
 (defun send-tg-message (bot str) bot str)
 (defun irc-check-connection (bot) bot)
 (defun irc-reconnect (bot &optional (callback nil))
@@ -127,25 +146,10 @@
   (if callback
       (funcall callback)))
 
-(defun clear-msg-pool-f (bot)
-  (if (cdr (bot-irc-message-pool-head bot))
-      (handler-case
-          (progn
-            (send-irc-message
-             bot
-             (cadr (bot-irc-message-pool-head bot)))
-            (setf (cdr (bot-irc-message-pool-head bot))
-                  (cddr (bot-irc-message-pool-head bot)))
-            (clear-msg-pool-f bot))
-        (condition ()
-          (logging "clear-msg-pool-f: Can NOT send irc msg, give up!")))))
-
 (defun irc-shutdown (bot)
-  (tryto
-   (part (bot-irc-connection bot)
-         (bot-irc-channel bot) "Bot shutdown"))
-  (tryto (quit (bot-irc-connection bot) "leaving"))
-  (tryto (sb-thread:terminate-thread (bot-thread-irc-read-loop bot))))
+  (part (bot-irc-connection bot)
+        (bot-irc-channel bot) "Bot shutdown")
+  (quit (bot-irc-connection bot) "leaving"))
 
 (defun irc-check-connection (bot)
   (let ((t1 (get-internal-real-time)))
@@ -466,7 +470,6 @@
 
 (defun creat-watcher-f (bot)
   (logging "Create IRC watcher")
-  (setf (bot-irc-ping-semaphore bot) (sb-thread:make-semaphore))
   (setf (bot-thread-irc-watcher bot)
         (sb-thread:make-thread
          (lambda ()
@@ -490,7 +493,7 @@
                             (condition (e)
                               (logging "Having Trouble: ~S" e)))
                           (progn (logging "Give up, Bot halt!")
-                                 (bot-halt))))))))
+                                 (bot-halt bot))))))))
          :name "IRC-WATCHER")))
 
 (defun bot-load-conf (bot config)
@@ -501,6 +504,7 @@
     (setf (bot-tg-bot-id bot) (jget :bot-id tg-conf))
     (setf (bot-tg-bot-authstr bot) (jget :bot-token tg-conf))
     (setf (bot-tg-chat-id bot) (jget :chat-id tg-conf))
+    (setf (bot-irc-reconnect-counter bot) 0)
     t))
 
 (defun bot-start (config)
@@ -517,7 +521,7 @@
     (creat-watcher-f bot)))
 
 (defun bot-halt (bot)
-  (tryto (sb-thread:terminate-thread (bot-thread-tg-loop bot)))
+  (tryto (irc-shutdown bot))
   (tryto (sb-thread:terminate-thread (bot-thread-irc-watcher bot)))
-  (tryto (irc-shutdown bot)))
-
+  (tryto (sb-thread:terminate-thread (bot-thread-irc-read-loop)))
+  (tryto (sb-thread:terminate-thread (bot-thread-tg-loop bot))))
