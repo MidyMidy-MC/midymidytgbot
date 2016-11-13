@@ -93,7 +93,7 @@
           (condition ()
             (logging
              (bot-name bot)
-             "clear-msg-pool-f: Can NOT send irc msg, give up!")))
+             "[ERROR]clear-msg-pool-f: Can NOT send irc msg, give up!")))
         ;; finish, reset tail
         (setf (bot-irc-message-pool-tail bot)
               (bot-irc-message-pool-head bot)))))
@@ -108,13 +108,13 @@
   (tryto (sb-thread:terminate-thread
           (bot-thread-irc-read-loop bot)))
   (sleep 5)
-  (logging (bot-name bot) "Connecting to IRC")
+  (logging (bot-name bot) "[INFO]Connecting to IRC")
   (setf (bot-irc-connection bot)
         (connect :nickname (bot-irc-name bot)
                  :server "irc.freenode.net"))
-  (logging (bot-name bot) "JOIN CHANNEL")
+  (logging (bot-name bot) "[INFO]JOIN CHANNEL")
   (join (bot-irc-connection bot) (bot-irc-channel bot))
-  (logging (bot-name bot) "ADD HOOKS")
+  (logging (bot-name bot) "[INFO]ADD HOOKS")
   (add-hook (bot-irc-connection bot)
             'irc::irc-privmsg-message
             (lambda (msg)
@@ -128,7 +128,7 @@
               (declare (ignore msg))
               (sb-thread:signal-semaphore
                (bot-irc-ping-semaphore bot))))
-  (logging (bot-name bot) "ACTIVATE IRC-READ-LOOP")
+  (logging (bot-name bot) "[INFO]ACTIVATE IRC-READ-LOOP")
   (setf (bot-thread-irc-read-loop bot)
         (sb-thread:make-thread
          (lambda ()
@@ -411,7 +411,7 @@
           (condition (e)
             (logging
              (bot-name bot)
-             "process-tg-msg: trouble on uploading file: ~A"
+             "[ERROR]process-tg-msg: trouble on uploading file: ~A"
              e)))
         (setf result
               (append `(,reply ,photo ,file ,sticker)
@@ -429,7 +429,7 @@
               (progn
                 (logging
                  (bot-name bot)
-                 "process-tg-msg: trouble of sending msg: ~A"
+                 "[ERROR]process-tg-msg: trouble of sending msg: ~A"
                  e))))))))
 
 (defun tg-sort-result (result)
@@ -458,29 +458,35 @@
                      (process-tg-msg bot (car result-lst)))
                    result))
          (condition (e)
-           (progn (logging (bot-name bot) "TG-LOOP in trouble: ~S!" e)
+           (progn (logging (bot-name bot)
+                           "[ERROR]TG-LOOP in trouble: ~S!" e)
                   ;; prevent loop overheat
                   (sleep 2)))))))
 
 ;;;;------------------------------------------------
 
 (defun create-watcher-f (bot)
-  (logging (bot-name bot) "Create IRC watcher")
+  (logging (bot-name bot) "[INFO]Create IRC watcher")
   (setf (bot-thread-irc-watcher bot)
         (sb-thread:make-thread
          (lambda ()
            (loop
               (sleep 60)
-              (logging (bot-name bot) "Checking IRC Connection ...")
+              (logging (bot-name bot) "[INFO]Checking IRC Connection ...")
               (let ((delay (irc-check-connection bot)))
                 (if delay
                     (progn
-                      (logging (bot-name bot) "OK! Ping delay: ~As" delay)
-                      (logging (bot-name bot) "Trying to clear Msg Pool")
-                      (clear-msg-pool-f bot)
+                      (logging (bot-name bot)
+                               "[INFO]OK! Ping delay: ~As" delay)
+                      (if (cdr (bot-irc-message-pool-head))
+                          (progn
+                            (logging (bot-name bot)
+                                     "[INFO]Trying to clear Msg Pool")
+                            (clear-msg-pool-f bot)))
                       (setf (bot-irc-reconnect-counter bot) 0))
                     (progn
-                      (logging (bot-name bot) "FAILED! RECONNECTING!")
+                      (logging (bot-name bot)
+                               "[ERROR]FAILED! RECONNECTING!")
                       (incf (bot-irc-reconnect-counter bot))
                       (if (> 20 (bot-irc-reconnect-counter bot))
                           (handler-case
@@ -488,9 +494,9 @@
                                      (clear-msg-pool-f bot))
                             (condition (e)
                               (logging (bot-name bot)
-                                       "Having Trouble: ~S" e)))
+                                       "[ERROR]Having Trouble: ~S" e)))
                           (progn (logging (bot-name bot)
-                                          "Give up, Bot halt!")
+                                          "[FATAL]Give up, Bot halt!")
                                  (bot-halt bot))))))))
          :name "IRC-WATCHER")))
 
@@ -514,7 +520,7 @@
 (defun bot-start (config)
   (let ((bot (bot-load-conf config)))
     (irc-reconnect bot)
-    (logging (bot-name bot) "Creat TG LOOP")
+    (logging (bot-name bot) "[INFO]Creat TG LOOP")
     (setf (bot-thread-tg-loop bot)
           (sb-thread:make-thread (lambda ()
                                    (tg-getupdate-loop bot))

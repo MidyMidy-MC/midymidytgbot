@@ -21,7 +21,7 @@
                        (concatenate 'string
                                     (time-str)
                                     (format nil "[~A]" source)
-                                    " " msg))
+                                    msg))
                  args))))
     (write-line str *log-out*)
     (if *log-file*
