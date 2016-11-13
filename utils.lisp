@@ -27,8 +27,7 @@
     (if *log-file*
         (with-open-file (out *log-file* :direction :output
                              :if-exists :append
-                             :element-type 'character
-                             :external-format 'utf-8)
+                             :element-type 'character)
           (write-line str out)))))
 
 (defun exit ()

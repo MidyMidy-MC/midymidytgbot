@@ -478,7 +478,7 @@
                     (progn
                       (logging (bot-name bot)
                                "[INFO]OK! Ping delay: ~As" delay)
-                      (if (cdr (bot-irc-message-pool-head))
+                      (if (cdr (bot-irc-message-pool-head bot))
                           (progn
                             (logging (bot-name bot)
                                      "[INFO]Trying to clear Msg Pool")
