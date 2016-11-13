@@ -13,13 +13,23 @@
     (format nil "[~A-~A ~2,'0D:~2,'0D:~2,'0D]"
             m d hh mm ss)))
 
-(defun logging (msg &rest args)
-  (apply #'format
-         (append
-          (list *log-out*
-                (concatenate 'string
-                             (time-str) " " msg "~%"))
-          args)))
+(defun logging (source msg &rest args)
+  (let ((str
+         (apply #'format
+                (append
+                 (list nil
+                       (concatenate 'string
+                                    (time-str)
+                                    (format nil "[~A]" source)
+                                    " " msg))
+                 args))))
+    (write-line str *log-out*)
+    (if *log-file*
+        (with-open-file (out *log-file* :direction :output
+                             :if-exists :append
+                             :element-type 'character
+                             :external-format 'utf-8)
+          (write-line str out)))))
 
 (defun exit ()
   (sb-ext:exit))
@@ -44,7 +54,7 @@
               (block nil
                 (if (>= (1+ i) len)
                     (progn
-                      (logging "Corrector: invalid input, A8BSP")
+                      (logging :SYS "Corrector: invalid input, A8BSP")
                       (return "[Invalid JSON, code: LXEA6FD]"))
                     (incf i))
                 (let ((c2 (char-code (aref wrong-string i))))
