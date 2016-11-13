@@ -246,6 +246,10 @@
         (jget :from
               (jget :message update))))
 
+(defun tg-sender-username (update)
+  (jget :username
+        (jget :from (jget :message update))))
+
 (defun msgstr-tg->irc-list (update)
   (let ((text (jget :text (jget :message update)))
         (str (make-str))
@@ -274,6 +278,12 @@
 
 (defun tg-update-repliee-first-name (update)
   (jget :first--name
+        (jget :from
+              (jget :reply--to--message
+                    (jget :message update)))))
+
+(defun tg-update-repliee-username (update)
+  (jget :username
         (jget :from
               (jget :reply--to--message
                     (jget :message update)))))
@@ -365,7 +375,7 @@
         (setf reply-to-text
               (concatenate
                'string
-               (tg-update-repliee-first-name update)
+               (tg-update-repliee-username update)
                ": " reply-to-text)))
     (let ((reply-to-text-cut
            (if (> (length reply-to-text) too-long)
@@ -385,6 +395,7 @@
      ("text" . ,str))))
 
 (defun process-tg-msg (bot update)
+  (setf *up* update)
   (if (tg-is-message? update) ; don't care about other data
       ;; one-line: reply, photo, file, sticker
       ;; multi-line: text
@@ -423,7 +434,7 @@
                   (send-irc-message
                    bot
                    (concatenate 'string
-                                (tg-sender-first-name update)
+                                (tg-sender-username update)
                                 ": " i))
                 (condition (e)
                   (progn
