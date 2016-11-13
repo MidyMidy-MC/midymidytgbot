@@ -73,30 +73,29 @@
         (sb-thread:make-mutex
          :name "bot-irc-message-pool-lock")))
 
-(defun push-msg-pool (str bot)
+(defun push-msg-pool (bot str)
   (sb-thread:with-mutex ((bot-irc-message-pool-lock bot))
     (let ((new (list str)))
       (setf (cdr (bot-irc-message-pool-tail bot)) new)
       (setf (bot-irc-message-pool-tail bot) new))))
 
 (defun clear-msg-pool-f (bot)
-  (sb-thread:with-mutex ((bot-irc-message-pool-lock bot))
-    (if (cdr (bot-irc-message-pool-head bot))
-        (handler-case
-            (progn
-              (send-irc-message
-               bot
-               (cadr (bot-irc-message-pool-head bot)))
-              (setf (cdr (bot-irc-message-pool-head bot))
-                    (cddr (bot-irc-message-pool-head bot)))
-              (clear-msg-pool-f bot))
-          (condition ()
-            (logging
-             (bot-name bot)
-             "[ERROR]clear-msg-pool-f: Can NOT send irc msg, give up!")))
-        ;; finish, reset tail
-        (setf (bot-irc-message-pool-tail bot)
-              (bot-irc-message-pool-head bot)))))
+  (if (cdr (bot-irc-message-pool-head bot))
+      (handler-case
+          (progn
+            (send-irc-message
+             bot
+             (cadr (bot-irc-message-pool-head bot)))
+            (setf (cdr (bot-irc-message-pool-head bot))
+                  (cddr (bot-irc-message-pool-head bot)))
+            (clear-msg-pool-f bot))
+        (condition (e)
+          (logging
+           (bot-name bot)
+           "[ERROR]clear-msg-pool-f: Can NOT send irc msg, give up! ~S" e)))
+      ;; finish, reset tail
+      (setf (bot-irc-message-pool-tail bot)
+            (bot-irc-message-pool-head bot))))
 
 ;; supress warning
 (defun bot-halt (bot) bot)
@@ -419,18 +418,20 @@
         (if (not (or reply photo file sticker text-lst))
             (setf result `("[ other media ]")))
         (dolist (i result)
-          (handler-case
-              (if i (send-irc-message
-                     bot
-                     (concatenate 'string
-                                  (tg-sender-first-name update)
-                                  ": " i)))
-            (condition (e)
-              (progn
-                (logging
-                 (bot-name bot)
-                 "[ERROR]process-tg-msg: trouble of sending msg: ~A"
-                 e))))))))
+          (if i
+              (handler-case
+                  (send-irc-message
+                   bot
+                   (concatenate 'string
+                                (tg-sender-first-name update)
+                                ": " i))
+                (condition (e)
+                  (progn
+                    (logging
+                     (bot-name bot)
+                     "[ERROR]process-tg-msg: trouble of sending msg: ~A"
+                     e)
+                    (push-msg-pool bot i)))))))))
 
 (defun tg-sort-result (result)
   (sort result
@@ -482,7 +483,9 @@
                           (progn
                             (logging (bot-name bot)
                                      "[INFO]Trying to clear Msg Pool")
-                            (clear-msg-pool-f bot)))
+                            (sb-thread:with-mutex
+                                ((bot-irc-message-pool-lock bot))
+                              (clear-msg-pool-f bot))))
                       (setf (bot-irc-reconnect-counter bot) 0))
                     (progn
                       (logging (bot-name bot)
@@ -490,8 +493,7 @@
                       (incf (bot-irc-reconnect-counter bot))
                       (if (> 20 (bot-irc-reconnect-counter bot))
                           (handler-case
-                              (progn (irc-reconnect bot)
-                                     (clear-msg-pool-f bot))
+                              (irc-reconnect bot)
                             (condition (e)
                               (logging (bot-name bot)
                                        "[ERROR]Having Trouble: ~S" e)))
