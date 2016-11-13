@@ -27,6 +27,7 @@
     (if *log-file*
         (with-open-file (out *log-file* :direction :output
                              :if-exists :append
+                             :if-does-not-exist :create
                              :element-type 'character)
           (write-line str out)))))
 
