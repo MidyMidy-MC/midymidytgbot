@@ -395,7 +395,6 @@
      ("text" . ,str))))
 
 (defun process-tg-msg (bot update)
-  (setf *up* update)
   (if (tg-is-message? update) ; don't care about other data
       ;; one-line: reply, photo, file, sticker
       ;; multi-line: text
