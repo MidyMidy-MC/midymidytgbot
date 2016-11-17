@@ -394,6 +394,16 @@
    `(("chat_id" . ,(bot-tg-chat-id bot))
      ("text" . ,str))))
 
+(defun username-add-irc-color (str)
+  (let ((a 0))
+    (dotimes (i (length str))
+      (incf a (char-code (aref str i))))
+    (with-output-to-string (out)
+      (write-char (code-char 3) out)
+      (format out "~A" (+ 2 (mod a 6)))
+      (write-string str out)
+      (write-char (code-char 3) out))))
+
 (defun process-tg-msg (bot update)
   (if (tg-is-message? update) ; don't care about other data
       ;; one-line: reply, photo, file, sticker
@@ -433,8 +443,12 @@
                   (send-irc-message
                    bot
                    (concatenate 'string
-                                (tg-sender-username update)
-                                ": " i))
+                                (username-add-irc-color
+                                 (concatenate
+                                  'string
+                                  (tg-sender-username update)
+                                  ": "))
+                                i))
                 (condition (e)
                   (progn
                     (logging
