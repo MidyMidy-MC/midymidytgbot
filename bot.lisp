@@ -341,7 +341,7 @@
 
 (defun msgstr-tgreply->irc (bot update)
   "Transform only reply refer to irc, not text"
-  (let* ((too-long     40)
+  (let* ((too-long     50)
          (dummy-update `(,(cons
                            :message
                            (jget
