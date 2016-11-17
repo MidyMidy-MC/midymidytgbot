@@ -9,7 +9,8 @@
   (cl:require :cl-irc)
   (cl:require :drakma)
   (cl:require :cl-json)
-  (cl:require :flexi-streams))
+  (cl:require :flexi-streams)
+  (cl:require :cl-ppcre))
 
 (defpackage :midymidybot
   (:use :cl :cl-user :cl-irc :irc :drakma :json)
@@ -57,8 +58,14 @@
 (defun msg-body (msg)
   (cadr (arguments msg)))
 
+(defun remove-irc-color (str)
+  (cl-ppcre:regex-replace-all
+   "[\\x02\\x0F\\x16\\x1D\\x1F]|\\x03(\\d{1,2}(,\\d{1,2})?)?"
+   str ""))
+
 (defun msgstr-irc->tg (msg)
-  (concatenate 'string (msg-user msg) ": " (msg-body msg)))
+  (remove-irc-color
+   (concatenate 'string (msg-user msg) ": " (msg-body msg))))
 
 (defun send-irc-message (bot str)
   (privmsg (bot-irc-connection bot)
