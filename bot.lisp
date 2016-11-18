@@ -63,9 +63,25 @@
    "[\\x02\\x0F\\x16\\x1D\\x1F]|\\x03(\\d{1,2}(,\\d{1,2})?)?"
    str ""))
 
+(defun html-entities-filter (str)
+  (with-input-from-string (in str)
+    (with-output-to-string (out)
+      (do ((c (read-char in nil nil)
+              (read-char in nil nil)))
+          ((null c))
+        (case c
+          (#\< (write-string "&lt;" out))
+          (#\> (write-string "&gt;" out))
+          (#\& (write-string "&amp;" out))
+          (otherwise (write-char c out)))))))
+
 (defun msgstr-irc->tg (msg)
   (remove-irc-color
-   (concatenate 'string (msg-user msg) ": " (msg-body msg))))
+   (concatenate 'string
+                "<b>" (msg-user msg) "</b>"
+                ": "
+                ;; use telegram html parser
+                (html-entities-filter (msg-body msg)))))
 
 (defun send-irc-message (bot str)
   (privmsg (bot-irc-connection bot)
@@ -399,7 +415,8 @@
    bot
    "sendMessage"
    `(("chat_id" . ,(bot-tg-chat-id bot))
-     ("text" . ,str))))
+     ("text" . ,str)
+     ("parse_mode" . "HTML"))))
 
 (defun username-add-irc-color (str)
   (let ((a 0))
