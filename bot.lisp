@@ -41,6 +41,7 @@
   (tg-bot-id nil :type integer)
   (tg-bot-authstr "" :type string)
   (tg-chat-id nil :type integer)
+  (tg-hooks-lst '())
 
   thread-irc-read-loop
   thread-irc-watcher
@@ -430,6 +431,13 @@
       (write-char (code-char 3) out)
       (write-char (code-char #xF) out))))
 
+(defun check-tg-hooks (bot text-lst)
+  (let* ((hooks-lst (bot-tg-hooks-lst bot))
+         (hook (dolist (h hooks-lst)
+                 (if (cl-ppcre:all-matches (car h) (car text-lst))
+                     (return (cdr h))))))
+    (if hook (funcall hook (car text-lst)))))
+
 (defun process-tg-msg (bot update)
   (if (tg-is-message? update) ; don't care about other data
       ;; one-line: reply, photo, file, sticker
@@ -481,7 +489,8 @@
                      (bot-name bot)
                      "[ERROR]process-tg-msg: trouble of sending msg: ~A"
                      e)
-                    (push-msg-pool bot i)))))))))
+                    (push-msg-pool bot i))))))
+        (if text-lst (check-tg-hooks bot text-lst)))))
 
 (defun tg-sort-result (result)
   (sort result
@@ -552,6 +561,16 @@
                                  (bot-halt bot))))))))
          :name "IRC-WATCHER")))
 
+(defun load-tg-hooks (hooks-lst)
+  (mapcar (lambda (pair)
+            (cons (car pair)
+                  (if (eq 'lambda (cadr pair))
+                      (eval (cdr pair))
+                      (error (format *log-out*
+                                     "loag-tg-hooks ERROR: Not lambda: ~A~%"
+                                     (cdr pair))))))
+          hooks-lst))
+
 (defun bot-load-conf (config)
   (let* ((irc-conf (jget :irc config))
          (tg-conf (jget :tg config))
@@ -565,7 +584,9 @@
                     :tg-bot-id (jget :bot-id tg-conf)
                     :tg-bot-authstr (jget :bot-token tg-conf)
                     :tg-chat-id (jget :chat-id tg-conf)
-                    :irc-reconnect-counter 0)))
+                    :irc-reconnect-counter 0
+                    :tg-hooks-lst (load-tg-hooks
+                                   (jget :hooks tg-conf)))))
     (init-bot-irc-msg-pool bot)
     bot))
 
