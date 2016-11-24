@@ -29,6 +29,7 @@
   irc-passwd
   (irc-channel "" :type string)
   (irc-server "irc.freenode.net")
+  (irc-port nil)
   (irc-znc nil)
   irc-connection
   (irc-ping-semaphore (sb-thread:make-semaphore)
@@ -134,13 +135,13 @@
           (bot-thread-irc-read-loop bot)))
   (sleep 5)
   (logging (bot-name bot) "[INFO]Connecting to IRC")
+  ;; currently, only implement znc password
   (setf (bot-irc-connection bot)
         (connect :nickname (bot-irc-name bot)
-                 :server (bot-irc-server bot)))
-  ;; currently, only implement znc password
-  (if (and (bot-irc-passwd bot)
-           (bot-irc-znc bot))
-      (pass (bot-irc-connection bot) (bot-irc-passwd bot)))
+                 :server (bot-irc-server bot)
+                 :password (bot-irc-passwd bot)
+                 :port (if (bot-irc-port bot)
+                           (bot-irc-port bot) :default)))
   (if (not (bot-irc-znc bot))
       (progn
         (logging (bot-name bot) "[INFO]JOIN CHANNEL")
@@ -593,6 +594,7 @@
                     :irc-server (if (jget :server irc-conf)
                                     (jget :server irc-conf)
                                     "irc.freenode.net")
+                    :irc-port (jget :znc irc-conf)
                     :irc-channel (jget :channel irc-conf)
                     :tg-bot-id (jget :bot-id tg-conf)
                     :tg-bot-authstr (jget :bot-token tg-conf)
