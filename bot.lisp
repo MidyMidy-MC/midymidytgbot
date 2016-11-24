@@ -594,7 +594,7 @@
                     :irc-server (if (jget :server irc-conf)
                                     (jget :server irc-conf)
                                     "irc.freenode.net")
-                    :irc-port (jget :znc irc-conf)
+                    :irc-port (jget :port irc-conf)
                     :irc-channel (jget :channel irc-conf)
                     :tg-bot-id (jget :bot-id tg-conf)
                     :tg-bot-authstr (jget :bot-token tg-conf)
