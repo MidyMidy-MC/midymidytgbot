@@ -28,6 +28,8 @@
   (irc-name "" :type string)
   irc-passwd
   (irc-channel "" :type string)
+  (irc-server "irc.freenode.net")
+  (irc-znc nil)
   irc-connection
   (irc-ping-semaphore (sb-thread:make-semaphore)
                       :type sb-thread:semaphore)
@@ -134,9 +136,16 @@
   (logging (bot-name bot) "[INFO]Connecting to IRC")
   (setf (bot-irc-connection bot)
         (connect :nickname (bot-irc-name bot)
-                 :server "irc.freenode.net"))
-  (logging (bot-name bot) "[INFO]JOIN CHANNEL")
-  (join (bot-irc-connection bot) (bot-irc-channel bot))
+                 :server (bot-irc-server bot)))
+  ;; currently, only implement znc password
+  (if (and (bot-irc-passwd bot)
+           (bot-irc-znc bot))
+      (pass (bot-irc-connection bot) (bot-irc-passwd bot)))
+  (if (not (bot-irc-znc bot))
+      (progn
+        (logging (bot-name bot) "[INFO]JOIN CHANNEL")
+        (join (bot-irc-connection bot) (bot-irc-channel bot)))
+      (logging (bot-name bot) "[INFO]Use ZNC, not join channel"))
   (logging (bot-name bot) "[INFO]ADD HOOKS")
   (add-hook (bot-irc-connection bot)
             'irc::irc-privmsg-message
@@ -580,6 +589,10 @@
                               "UnamedBot")
                     :irc-name (jget :username irc-conf)
                     :irc-passwd (jget :passwd irc-conf)
+                    :irc-znc (jget :znc irc-conf)
+                    :irc-server (if (jget :server irc-conf)
+                                    (jget :server irc-conf)
+                                    "irc.freenode.net")
                     :irc-channel (jget :channel irc-conf)
                     :tg-bot-id (jget :bot-id tg-conf)
                     :tg-bot-authstr (jget :bot-token tg-conf)
