@@ -87,6 +87,15 @@
                 ;; use telegram html parser
                 (html-entities-filter (msg-body msg)))))
 
+(defun msgaction-irc->tg (msg)
+  (concatenate 'string
+               "<b>* " (msg-user msg) "</b>"
+               " " "<i>"
+               (remove-irc-color
+                (html-entities-filter
+                 (subseq (msg-body msg) 8)))
+               "</i>"))
+
 (defun send-irc-message (bot str)
   (privmsg (bot-irc-connection bot)
            (bot-irc-channel bot)
@@ -161,6 +170,14 @@
               (declare (ignore msg))
               (sb-thread:signal-semaphore
                (bot-irc-ping-semaphore bot))))
+  (add-hook (bot-irc-connection bot)
+            'irc::ctcp-action-message
+            (lambda (msg)
+              (if (string= (bot-irc-channel bot)
+                           (msg-channel msg))
+                  (send-tg-message
+                   bot
+                   (msgaction-irc->tg msg)))))
   (logging (bot-name bot) "[INFO]ACTIVATE IRC-READ-LOOP")
   (setf (bot-thread-irc-read-loop bot)
         (sb-thread:make-thread
