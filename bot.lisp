@@ -64,7 +64,7 @@
 
 (defun remove-irc-color (str)
   (cl-ppcre:regex-replace-all
-   "[\\x02\\x0F\\x16\\x1D\\x1F]|\\x03(\\d{0,2}(,\\d{0,2})?)?"
+   "[\\x01\\x02\\x0F\\x16\\x1D\\x1F]|\\x03(\\d{0,2}(,\\d{0,2})?)?"
    str ""))
 
 (defun html-entities-filter (str)
