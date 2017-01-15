@@ -62,6 +62,17 @@
 (defun msg-body (msg)
   (cadr (arguments msg)))
 
+(defun write-code-char-string (&rest arg-lst)
+  (with-output-to-string (out)
+    (dolist (e arg-lst)
+      (cond ((numberp e) (write-char (code-char e) out))
+            ((characterp e) (write-char e out))
+            ((stringp e) (write-string e out))
+            (t (error
+                (format
+                 nil
+                 "Error: write-code-char-string, invalid type: ~A" e)))))))
+
 (defun remove-irc-color (str)
   (cl-ppcre:regex-replace-all
    "[\\x01\\x02\\x0F\\x16\\x1D\\x1F]|\\x03(\\d{0,2}(,\\d{0,2})?)?"
@@ -435,8 +446,8 @@
                                     0 too-long)
                             "......")
                reply-to-text)))
-      (concatenate 'string
-                   "[ Re: " reply-to-text-cut " ]"))))
+      (write-code-char-string
+       #x1D "[ Re: " reply-to-text-cut " ]" #x0F))))
 
 (defun send-tg-message (bot str)
   (decoded-tg-request
