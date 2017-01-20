@@ -461,13 +461,8 @@
   (let ((a 0))
     (dotimes (i (length str))
       (incf a (char-code (aref str i))))
-    (with-output-to-string (out)
-      (write-char (code-char 2) out)
-      (write-char (code-char 3) out)
-      (format out "~A" (+ 2 (mod a 6)))
-      (write-string str out)
-      (write-char (code-char 3) out)
-      (write-char (code-char #xF) out))))
+    (write-code-char-string
+     #x2 #x3 (format nil "~A" (+ 2 (mod a 6))) str #x3 #xF)))
 
 (defun check-tg-hooks (bot text-lst)
   (let* ((hooks-lst (bot-tg-hooks-lst bot))
