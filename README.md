@@ -24,4 +24,5 @@ MidyMidy社区的bot，用于在IRC频道和Telegram群之间传话。
 TODO
 ----
 
+* 马老师会导致bot故障：irc不显示名称
 * 寻找bug。
