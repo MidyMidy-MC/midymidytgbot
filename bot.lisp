@@ -308,9 +308,21 @@
         (jget :from
               (jget :message update))))
 
+(defun tg-sender-last-name (update)
+  (jget :last--name
+        (jget :from
+              (jget :message update))))
+
 (defun tg-sender-username (update)
   (jget :username
         (jget :from (jget :message update))))
+
+(defun tg-sender-name (update)
+  (let ((username (tg-sender-username update))
+        (first-name (tg-sender-first-name update)))
+    (if username
+        username
+        first-name)))
 
 (defun msgstr-tg->irc-list (update)
   (let ((text (jget :text (jget :message update)))
@@ -513,7 +525,7 @@
                                 (username-add-irc-color
                                  (concatenate
                                   'string
-                                  (tg-sender-username update)
+                                  (tg-sender-name update)
                                   ": "))
                                 i))
                 (condition (e)
