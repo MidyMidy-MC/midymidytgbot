@@ -484,7 +484,8 @@
     (if hook (funcall hook (car text-lst)))))
 
 (defun process-tg-msg (bot update)
-  (if (tg-is-message? update) ; don't care about other data
+  (if (and (tg-is-message? update) ; don't care about other data
+           (tg-is-our-chat? bot update)) ; don't care other's data
       ;; one-line: reply, photo, file, sticker
       ;; multi-line: text
       (let* ((reply    (if (tg-is-reply? update)
