@@ -13,13 +13,23 @@
     (format nil "[~A-~A ~2,'0D:~2,'0D:~2,'0D]"
             m d hh mm ss)))
 
-(defun logging (msg &rest args)
-  (apply #'format
-         (append
-          (list *log-out*
-                (concatenate 'string
-                             (time-str) " " msg "~%"))
-          args)))
+(defun logging (source msg &rest args)
+  (let ((str
+         (apply #'format
+                (append
+                 (list nil
+                       (concatenate 'string
+                                    (time-str)
+                                    (format nil "[~A]" source)
+                                    msg))
+                 args))))
+    (write-line str *log-out*)
+    (if *log-file*
+        (with-open-file (out *log-file* :direction :output
+                             :if-exists :append
+                             :if-does-not-exist :create
+                             :element-type 'character)
+          (write-line str out)))))
 
 (defun exit ()
   (sb-ext:exit))
@@ -34,26 +44,27 @@
 
 (defun correct-cljson-surrogate-pairs (wrong-string)
   (with-output-to-string (out)
-    (let ((len (length wrong-string)))
-      (dotimes (i len)
-        (let* ((char1 (aref wrong-string i))
-               (c1 (char-code char1)))
-          (if (not (and (>= c1 #xD800)
-                        (<= c1 #xDBFF)))
-              (write-char char1 out)
-              (block nil
-                (if (>= (1+ i) len)
-                    (progn
-                      (logging "Corrector: invalid input, A8BSP")
-                      (return "[Invalid JSON, code: LXEA6FD]"))
-                    (incf i))
-                (let ((c2 (char-code (aref wrong-string i))))
-                  (write-char
-                   (code-char
-                    (+ #x10000
-                       (ash (logand #x03FF c1) 10)
-                       (logand #x03FF c2)))
-                   out)))))))))
+    (with-input-from-string (in wrong-string)
+      (do ((c (read-char in nil nil)
+              (read-char in nil nil)))
+          ((null c))
+        (if (<= #xD800 (char-code c) #xDBFF)
+            ;; open surrogate pair
+            (let ((cc (read-char in nil nil)))
+              (if (or (null cc)
+                      (not (<= #xDC00 (char-code cc) #xDFFF)))
+                  (write-char #\replacement_character out)
+                  (let ((c1 (char-code c))
+                        (c2 (char-code cc)))
+                    (write-char (code-char
+                                 (+ #x10000
+                                    (ash (logand #x03FF c1) 10)
+                                    (logand #x03FF c2)))
+                                out))))
+            ;; normal characters
+            (if (<= #xDC00 (char-code c) #xDFFF)
+                (write-char #\replacement_character out)
+                (write-char c out)))))))
 ;; (correct-cljson-surrogate-pairs
 ;;  (with-input-from-string
 ;;      (stream "\"你好\\uD83D\\uDE03吼啊\"")
