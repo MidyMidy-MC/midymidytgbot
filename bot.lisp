@@ -549,11 +549,14 @@
   (let ((offset 0))
     (loop
        (handler-case
-           (let* ((response (decoded-tg-request
-                             bot
-                             "getUpdates"
-                             `(("offset" . ,offset)
-                               ("timeout" . 17))))
+           (let* ((timeout 20)
+                  (response (with-timeout-nil
+                                timeout
+                              (decoded-tg-request
+                               bot
+                               "getUpdates"
+                               `(("offset" . ,offset)
+                                 ("timeout" . ,timeout)))))
                   (result (tg-sort-result
                            (jget :result response))))
              (mapl (lambda (result-lst)
