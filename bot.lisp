@@ -228,7 +228,7 @@
                    "https://api.telegram.org/"
                    (bot-tg-bot-authstr bot) "/"
                    method-name)
-      :connection-timeout 100
+      ;; :connection-timeout 100
       :method http-method
       :content-type "application/json"
       :content (if parameters
