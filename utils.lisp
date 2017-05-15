@@ -1,5 +1,17 @@
 (in-package :midymidybot)
 
+(defmacro with-timeout-nil (timeout &body body)
+  (let ((timer (gensym))
+        (value (gensym)))
+    `(handler-case
+         (let ((,timer (make-timer (lambda ()
+                                     (error "Timeout")))))
+           (schedule-timer ,timer ,timeout)
+           (let ((,value (progn ,@body)))
+             (unschedule-timer ,timer)
+             ,value))
+       (simple-error () nil))))
+
 (defun string-begin-with (match string)
   (let ((len (length match)))
     (and (>= (length string) len)

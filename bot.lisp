@@ -228,7 +228,7 @@
                    "https://api.telegram.org/"
                    (bot-tg-bot-authstr bot) "/"
                    method-name)
-      :connection-timeout 100
+      ;; :connection-timeout 100
       :method http-method
       :content-type "application/json"
       :content (if parameters
@@ -549,11 +549,14 @@
   (let ((offset 0))
     (loop
        (handler-case
-           (let* ((response (decoded-tg-request
-                             bot
-                             "getUpdates"
-                             `(("offset" . ,offset)
-                               ("timeout" . 17))))
+           (let* ((timeout 20)
+                  (response (with-timeout-nil
+                                timeout
+                              (decoded-tg-request
+                               bot
+                               "getUpdates"
+                               `(("offset" . ,offset)
+                                 ("timeout" . ,timeout)))))
                   (result (tg-sort-result
                            (jget :result response))))
              (mapl (lambda (result-lst)
