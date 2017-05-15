@@ -246,29 +246,38 @@
     (if (eq (car i) tag)
         (return (cdr i)))))
 
+(defun tg-get-message (update)
+  (or (jget :message update)
+      (jget :edited--message update)))
+
 (defun tg-is-message? (update)
-  (if (jget :message update) t nil))
+  (if (tg-get-message update)
+      t nil))
+
+(defun tg-is-edited--message? (update)
+  (if (jget :edited--message update)
+      t nil))
 
 (defun tg-is-text? (update)
-  (if (jget :text (jget :message update)) t nil))
+  (if (jget :text (tg-get-message update)) t nil))
 
 (defun tg-is-sticker? (update)
-  (if (jget :sticker (jget :message update)) t nil))
+  (if (jget :sticker (tg-get-message update)) t nil))
 
 (defun tg-is-reply? (update)
   (if (jget :reply--to--message
-            (jget :message update)) t nil))
+            (tg-get-message update)) t nil))
 
 (defun tg-is-our-chat? (bot update)
   (= (bot-tg-chat-id bot)
-     (jget :id (jget :chat (jget :message update)))))
+     (jget :id (jget :chat (tg-get-message update)))))
 
 (defun tg-is-photo? (update)
   (if (jget :photo
-            (jget :message update)) t nil))
+            (tg-get-message update)) t nil))
 
 (defun tg-is-imageasfile? (update)
-  (let ((doc (jget :document (jget :message update))))
+  (let ((doc (jget :document (tg-get-message update))))
     (if doc
         (string-begin-with
          "image"
@@ -276,7 +285,7 @@
 
 (defun tg-get-photo-id (update)
   (let ((file-lst (jget :photo
-                        (jget :message update))))
+                        (tg-get-message update))))
     (setf file-lst ;; must less than 400KB
           (remove-if (lambda (file)
                        (> (jget :file--size file)
@@ -305,17 +314,15 @@
 
 (defun tg-sender-first-name (update)
   (jget :first--name
-        (jget :from
-              (jget :message update))))
+        (jget :from (tg-get-message update))))
 
 (defun tg-sender-last-name (update)
   (jget :last--name
-        (jget :from
-              (jget :message update))))
+        (jget :from (tg-get-message update))))
 
 (defun tg-sender-username (update)
   (jget :username
-        (jget :from (jget :message update))))
+        (jget :from (tg-get-message update))))
 
 (defun tg-sender-name (update)
   (let ((username (tg-sender-username update))
@@ -325,7 +332,7 @@
         first-name)))
 
 (defun msgstr-tg->irc-list (update)
-  (let ((text (jget :text (jget :message update)))
+  (let ((text (jget :text (tg-get-message update)))
         (str (make-str))
         (lst nil))
     (loop for c across text do
@@ -348,25 +355,25 @@
   (jget :id
         (jget :from
               (jget :reply--to--message
-                    (jget :message update)))))
+                    (tg-get-message update)))))
 
 (defun tg-update-repliee-first-name (update)
   (jget :first--name
         (jget :from
               (jget :reply--to--message
-                    (jget :message update)))))
+                    (tg-get-message update)))))
 
 (defun tg-update-repliee-username (update)
   (jget :username
         (jget :from
               (jget :reply--to--message
-                    (jget :message update)))))
+                    (tg-get-message update)))))
 
 (defun msgstr-tgsticker->irc (update)
   (let ((emoji
          (jget :emoji
                (jget :sticker
-                     (jget :message update)))))
+                     (tg-get-message update)))))
     (concatenate 'string
                  "[ Sticker: " emoji " ]")))
 
@@ -380,14 +387,14 @@
          (url (with-input-from-string
                   (stream (upload-binary-file img-vector))
                 (read-line stream)))
-         (caption (jget :caption (jget :message update))))
+         (caption (jget :caption (tg-get-message update))))
     (concatenate 'string
                  "[ " url " ] " (if caption caption ""))))
 
 (defun msgstr-tgimageasfile->irc (bot update)
   ;; check sieze
   (if (> (jget :file--size (jget :document
-                                 (jget :message update)))
+                                 (tg-get-message update)))
          (* 600 1024))
       "[ image > 600KB ]"
       (let* ((img-vector
@@ -397,12 +404,12 @@
                 bot
                 (jget :file--id
                       (jget :document
-                            (jget :message update))))))
+                            (tg-get-message update))))))
              (url
               (with-input-from-string
                   (stream (upload-binary-file img-vector))
                 (read-line stream)))
-             (caption (jget :caption (jget :message update))))
+             (caption (jget :caption (tg-get-message update))))
         (concatenate 'string
                      "[ " url " ] " (if caption caption)))))
 
@@ -413,21 +420,21 @@
                            :message
                            (jget
                             :reply--to--message
-                            (jget :message update)))))
+                            (tg-get-message update)))))
          (photo
           (if (tg-is-photo? dummy-update)
               "[ photo ]" nil))
          (file (if (jget :document
-                         (jget :message dummy-update))
+                         (tg-get-message dummy-update))
                    "[ file ]" nil))
          (sticker
           (if (tg-is-sticker? dummy-update)
               (msgstr-tgsticker->irc dummy-update)
               nil))
          (caption (jget :caption
-                        (jget :message dummy-update)))
+                        (tg-get-message dummy-update)))
          (text (jget :text
-                     (jget :message dummy-update)))
+                     (tg-get-message dummy-update)))
          (other-media (if (not (or photo file sticker text))
                           "[ other media ]"))
          (reply-to-text
@@ -484,6 +491,7 @@
     (if hook (funcall hook (car text-lst)))))
 
 (defun process-tg-msg (bot update)
+  (push update *update-log*)
   (if (and (tg-is-message? update) ; don't care about other data
            (tg-is-our-chat? bot update)) ; don't care other's data
       ;; one-line: reply, photo, file, sticker
@@ -496,6 +504,7 @@
                            (msgstr-tgsticker->irc update)))
              (text-lst (if (tg-is-text? update)
                            (msgstr-tg->irc-list update)))
+             (edited (if (tg-is-edited--message? update) "[Edited] "))
              (result   nil))
         (handler-case
             (progn
@@ -505,7 +514,7 @@
                              (msgstr-tgimageasfile->irc
                               bot update)
                              (if (jget :document
-                                       (jget :message update))
+                                       (tg-get-message update))
                                  "[ file ]" nil))))
           (condition (e)
             (logging
@@ -513,7 +522,7 @@
              "[ERROR]process-tg-msg: trouble on uploading file: ~A"
              e)))
         (setf result
-              (append `(,reply ,photo ,file ,sticker)
+              (append `(,edited ,reply ,photo ,file ,sticker)
                       text-lst))
         (if (not (or reply photo file sticker text-lst))
             (setf result `("[ other media ]")))
