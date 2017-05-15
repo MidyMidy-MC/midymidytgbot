@@ -6,9 +6,9 @@
     `(handler-case
          (let ((,timer (sb-ext:make-timer (lambda ()
                                      (error "Timeout")))))
-           (schedule-timer ,timer ,timeout)
+           (sb-ext:schedule-timer ,timer ,timeout)
            (let ((,value (progn ,@body)))
-             (unschedule-timer ,timer)
+             (sb-ext:unschedule-timer ,timer)
              ,value))
        (simple-error () nil))))
 
