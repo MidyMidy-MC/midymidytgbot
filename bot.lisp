@@ -503,7 +503,6 @@
                            (msgstr-tgsticker->irc update)))
              (text-lst (if (tg-is-text? update)
                            (msgstr-tg->irc-list update)))
-             (edited (if (tg-is-edited--message? update) "[Edited] "))
              (result   nil))
         (handler-case
             (progn
@@ -520,8 +519,11 @@
              (bot-name bot)
              "[ERROR]process-tg-msg: trouble on uploading file: ~A"
              e)))
+        (if (tg-is-edited--message? update)
+            (setf (car text-lst) (concatenate 'string "[edit] "
+                                              (car text-lst))))
         (setf result
-              (append `(,edited ,reply ,photo ,file ,sticker)
+              (append `(,reply ,photo ,file ,sticker)
                       text-lst))
         (if (not (or reply photo file sticker text-lst))
             (setf result `("[ other media ]")))
