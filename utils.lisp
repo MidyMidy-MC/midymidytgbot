@@ -4,7 +4,7 @@
   (let ((timer (gensym))
         (value (gensym)))
     `(handler-case
-         (let ((,timer (make-timer (lambda ()
+         (let ((,timer (sb-ext:make-timer (lambda ()
                                      (error "Timeout")))))
            (schedule-timer ,timer ,timeout)
            (let ((,value (progn ,@body)))
