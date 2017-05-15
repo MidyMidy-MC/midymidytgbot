@@ -491,7 +491,6 @@
     (if hook (funcall hook (car text-lst)))))
 
 (defun process-tg-msg (bot update)
-  (push update *update-log*)
   (if (and (tg-is-message? update) ; don't care about other data
            (tg-is-our-chat? bot update)) ; don't care other's data
       ;; one-line: reply, photo, file, sticker
