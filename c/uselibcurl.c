@@ -35,7 +35,7 @@ size_t write_callback
 	return write_size;
 }
 
-struct mem_block* http_get(char* url)
+struct mem_block* c_http_get(char* url)
 	// char* url: end with \0
 {
 	CURL* curl = curl_easy_init();
@@ -67,3 +67,4 @@ struct mem_block* http_get(char* url)
 		return mem;
 	}
 }
+

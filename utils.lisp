@@ -112,9 +112,10 @@
          :content-length (length out)
          :content out)))))
 
-(load "./os-release.lisp")
+#|
 ;; Archlinux: /lib/libcurl.so
 ;; Debian 8: /usr/lib/x86_64-linux-gnu/libcurl.so
+(load "./os-release.lisp")
 (defun determine-libcurl-path ()
   (let ((os-release (os-release:read-os-release)))
     (cond ((string= "arch" (getf os-release :id))
@@ -124,6 +125,8 @@
           ((string= "debian" (getf os-release :id_like))
            #p"/usr/lib/x86_64-linux-gnu/libcurl.so"))))
 (cffi:load-foreign-library (determine-libcurl-path))
+|#
+
 (cffi:load-foreign-library #p"./c/libuselibcurl.so")
 
 (cffi:defcstruct mem_block
@@ -133,6 +136,20 @@
 (cffi:defcfun "global_init_curl" :void)
 (global-init-curl)
 
-;; HTTP-GET
-(cffi:defcfun "http_get" (:pointer (:struct mem_block))
+;; C-HTTP-GET
+(cffi:defcfun "c_http_get" (:pointer (:struct mem_block))
   (url :pointer))
+
+(defun http-get (url)
+  (let* ((mem-block (cffi:with-foreign-string (c-url url)
+                      (c-http-get c-url)))
+         (string nil))
+    (cffi:with-foreign-slots ((mem size) mem-block (:struct mem_block))
+      (setf string
+            (cffi:foreign-string-to-lisp
+             mem
+             :count size
+             :encoding :utf-8))
+      (cffi:foreign-free mem))
+    (cffi:foreign-free mem-block)
+    string))
