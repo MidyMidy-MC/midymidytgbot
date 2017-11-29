@@ -10,7 +10,8 @@
   (cl:require :drakma)
   (cl:require :cl-json)
   (cl:require :flexi-streams)
-  (cl:require :cl-ppcre))
+  (cl:require :cl-ppcre)
+  (cl:require :cffi))
 
 (defpackage :midymidybot
   (:use :cl :cl-user :cl-irc :irc :drakma :json)

@@ -3,16 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>
+#include "uselibcurl.h"
 
-void* global_init_curl()
+void global_init_curl()
 {
 	curl_global_init(CURL_GLOBAL_DEFAULT);
 }
-
-struct mem_block {
-	char* mem;
-	size_t size;
-};
 
 struct mem_block* make_mem_block()
 {

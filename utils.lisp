@@ -111,3 +111,28 @@
                  "multipart/form-data; boundary=~A" boundary)
          :content-length (length out)
          :content out)))))
+
+(load "./os-release.lisp")
+;; Archlinux: /lib/libcurl.so
+;; Debian 8: /usr/lib/x86_64-linux-gnu/libcurl.so
+(defun determine-libcurl-path ()
+  (let ((os-release (os-release:read-os-release)))
+    (cond ((string= "arch" (getf os-release :id))
+           #p"/lib/libcurl.so")
+          ((string= "debian" (getf os-release :id))
+           #p"/usr/lib/x86_64-linux-gnu/libcurl.so")
+          ((string= "debian" (getf os-release :id_like))
+           #p"/usr/lib/x86_64-linux-gnu/libcurl.so"))))
+(cffi:load-foreign-library (determine-libcurl-path))
+(cffi:load-foreign-library #p"./c/libuselibcurl.so")
+
+(cffi:defcstruct mem_block
+  (mem :pointer)
+  (size :unsigned-long))
+
+(cffi:defcfun "global_init_curl" :void)
+(global-init-curl)
+
+;; HTTP-GET
+(cffi:defcfun "http_get" (:pointer (:struct mem_block))
+  (url :pointer))

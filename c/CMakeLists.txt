@@ -1,5 +1,8 @@
-add_library(uselibcurl SHARED uselibcurl.c)
+cmake_minimum_required(VERSION 3.9)
 
-if(CMAKE_COMPILER_IS_GNUCXX)
-    set(CMAKE_CXX_FLAGS "-O2")        ## Optimize
-endif()
+add_library(uselibcurl SHARED uselibcurl.c)
+target_link_libraries(uselibcurl curl)
+
+add_executable(test_uselibcurl test.c)
+
+set(CMAKE_C_FLAGS "-O2 -ldl")        ## Optimize
