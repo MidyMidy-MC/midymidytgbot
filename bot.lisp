@@ -221,6 +221,7 @@
 ;;;; -----------------------------------------
 
 (defun tg-request (bot method-name &optional parameters)
+  "Naive request, returns a string"
   (let ((http-method (if parameters :post :get)))
     (flexi-streams:octets-to-string
      (http-request
@@ -237,6 +238,7 @@
      :external-format '(:utf-8 :eol-style :crlf))))
 
 (defun decoded-tg-request (bot method-name &optional parameters)
+  "Returns json as lisp list"
   (with-input-from-string
       (stream (tg-request bot method-name parameters))
     (decode-json stream)))
