@@ -144,6 +144,30 @@
   (let* ((mem-block (cffi:with-foreign-string (c-url url)
                       (c-http-get c-url)))
          (string nil))
+    (if (cffi:null-pointer-p mem-block)
+        (error "HTTP-GET: got a NULL pointer"))
+    (cffi:with-foreign-slots ((mem size) mem-block (:struct mem_block))
+      (setf string
+            (cffi:foreign-string-to-lisp
+             mem
+             :count size
+             :encoding :utf-8))
+      (cffi:foreign-free mem))
+    (cffi:foreign-free mem-block)
+    string))
+
+;; C-HTTP-POST
+(cffi:defcfun "c_http_post" (:pointer (:struct mem_block))
+  (url :pointer) (content :pointer))
+
+(defun http-post (url content)
+  (let* ((cffi:*default-foreign-encoding* :utf-8)
+         (mem-block (cffi:with-foreign-strings
+                        ((c-url url) (c-content content))
+                      (c-http-post c-url c-content)))
+         (string nil))
+    (if (cffi:null-pointer-p mem-block)
+        (error "HTTP-POST: got a NULL pointer"))
     (cffi:with-foreign-slots ((mem size) mem-block (:struct mem_block))
       (setf string
             (cffi:foreign-string-to-lisp

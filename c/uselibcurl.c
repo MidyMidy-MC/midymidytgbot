@@ -68,3 +68,37 @@ struct mem_block* c_http_get(char* url)
 	}
 }
 
+struct mem_block* c_http_post(char* url, char* content)
+	// char* url: end with \0
+{
+	CURL* curl = curl_easy_init();
+	if(!curl)
+		return NULL;
+
+	struct mem_block* mem = make_mem_block();
+
+	CURLcode res;
+	struct curl_slist *list = curl_slist_append(list,
+			"Content-Type: application/json");
+
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L); // complete within 10 sec
+	curl_easy_setopt(curl, CURLOPT_USERAGENT, "midymidytgbot");
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, content); // POST content
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)mem);
+
+	res = curl_easy_perform(curl);
+
+	curl_slist_free_all(list);
+	curl_easy_cleanup(curl);
+
+	if(res != CURLE_OK){
+		free(mem->mem);
+		free(mem);
+		return NULL;
+	}else{
+		return mem;
+	}
+}

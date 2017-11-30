@@ -221,6 +221,7 @@
 
 ;;;; -----------------------------------------
 
+#|
 (defun tg-request (bot method-name &optional parameters)
   "Naive request, returns a string"
   (let ((http-method (if parameters :post :get)))
@@ -237,6 +238,19 @@
                    (with-output-to-string (stream)
                      (encode-json parameters stream))))
      :external-format '(:utf-8 :eol-style :crlf))))
+|#
+
+(defun tg-request (bot method-name &optional parameters)
+  (let ((url (concatenate 'string
+                          "https://api.telegram.org/"
+                          (bot-tg-bot-authstr bot) "/"
+                          method-name))
+        (content (if parameters
+                     (with-output-to-string (stream)
+                       (encode-json parameters stream)))))
+    (if parameters
+        (http-post url content)
+        (http-get url))))
 
 (defun decoded-tg-request (bot method-name &optional parameters)
   "Returns json as lisp list"
