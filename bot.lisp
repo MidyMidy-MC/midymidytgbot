@@ -194,7 +194,7 @@
         (sb-thread:make-thread
          (lambda ()
            (read-message-loop (bot-irc-connection bot)))
-         :name "IRC-READ-LOOP"))
+         :name (format nil "IRC-READ-LOOP (~A)" (bot-name bot))))
   (if callback
       (funcall callback)))
 
@@ -618,7 +618,7 @@
                           (progn (logging (bot-name bot)
                                           "[FATAL]Give up, Bot halt!")
                                  (bot-halt bot))))))))
-         :name "IRC-WATCHER")))
+         :name (format nil "IRC-WATCHER (~A)" (bot-name bot)))))
 
 (defun load-tg-hooks (hooks-lst)
   (mapcar (lambda (pair)
@@ -661,7 +661,7 @@
     (setf (bot-thread-tg-loop bot)
           (sb-thread:make-thread (lambda ()
                                    (tg-getupdate-loop bot))
-                                 :name "TG-LOOP"))
+                                 :name (format nil "TG-LOOP(~A)" (bot-name bot))))
     (sleep 10)
     (create-watcher-f bot)
     bot))
