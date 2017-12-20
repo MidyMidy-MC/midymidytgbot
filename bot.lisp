@@ -48,7 +48,9 @@
 
   thread-irc-read-loop
   thread-irc-watcher
-  thread-tg-loop)
+  thread-tg-loop
+  tg-loop-update-time
+  thread-tg-watcher)
 
 (defun msg-user (msg)
   (source msg))
@@ -194,7 +196,7 @@
         (sb-thread:make-thread
          (lambda ()
            (read-message-loop (bot-irc-connection bot)))
-         :name "IRC-READ-LOOP"))
+         :name (format nil "IRC-READ-LOOP (~A)" (bot-name bot))))
   (if callback
       (funcall callback)))
 
@@ -228,7 +230,7 @@
                    "https://api.telegram.org/"
                    (bot-tg-bot-authstr bot) "/"
                    method-name)
-      ;; :connection-timeout 100
+      :connection-timeout 20
       :method http-method
       :content-type "application/json"
       :content (if parameters
@@ -558,15 +560,14 @@
   "Need a `overheat' protection"
   (let ((offset 0))
     (loop
+       (setf (bot-tg-loop-update-time bot) (get-universal-time))
        (handler-case
-           (let* ((timeout 20)
-                  (response (with-timeout-nil
-                                timeout
-                              (decoded-tg-request
-                               bot
-                               "getUpdates"
-                               `(("offset" . ,offset)
-                                 ("timeout" . ,timeout)))))
+           (let* ((timeout 15)
+                  (response (decoded-tg-request
+                             bot
+                             "getUpdates"
+                             `(("offset" . ,offset)
+                               ("timeout" . ,timeout))))
                   (result (tg-sort-result
                            (jget :result response))))
              (mapl (lambda (result-lst)
@@ -618,7 +619,7 @@
                           (progn (logging (bot-name bot)
                                           "[FATAL]Give up, Bot halt!")
                                  (bot-halt bot))))))))
-         :name "IRC-WATCHER")))
+         :name (format nil "IRC-WATCHER (~A)" (bot-name bot)))))
 
 (defun load-tg-hooks (hooks-lst)
   (mapcar (lambda (pair)
@@ -654,6 +655,23 @@
     (init-bot-irc-msg-pool bot)
     bot))
 
+(defun tg-watcher (bot)
+  (loop
+     (sleep 10)
+     (let ((interval (- (get-universal-time)
+                        (bot-tg-loop-update-time bot))))
+       (if (> interval 40)
+           (progn
+             (sb-thread:terminate-thread
+              (bot-thread-tg-loop bot))
+             (setf (bot-thread-tg-loop bot)
+                   (sb-thread:make-thread
+                    (lambda ()
+                      (tg-getupdate-loop bot))
+                    :name (format nil "TG-LOOP(~A)" (bot-name bot))))
+             (logging (bot-name bot)
+                      "[ERROR]tg-watcher: tg-loop dead, restarted."))))))
+
 (defun bot-start (config)
   (let ((bot (bot-load-conf config)))
     (irc-reconnect bot)
@@ -661,7 +679,9 @@
     (setf (bot-thread-tg-loop bot)
           (sb-thread:make-thread (lambda ()
                                    (tg-getupdate-loop bot))
-                                 :name "TG-LOOP"))
+                                 :name (format nil "TG-LOOP(~A)" (bot-name bot))))
+    (setf (bot-thread-tg-watcher bot)
+          (sb-thread:make-thread #'tg-watcher))
     (sleep 10)
     (create-watcher-f bot)
     bot))
