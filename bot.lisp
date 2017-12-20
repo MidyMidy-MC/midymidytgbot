@@ -655,6 +655,23 @@
     (init-bot-irc-msg-pool bot)
     bot))
 
+(defun tg-watcher (bot)
+  (loop
+     (sleep 10)
+     (let ((interval (- (get-universal-time)
+                        (bot-tg-loop-update-time bot))))
+       (if (> interval 40)
+           (progn
+             (sb-thread:terminate-thread
+              (bot-thread-tg-loop bot))
+             (setf (bot-thread-tg-loop bot)
+                   (sb-thread:make-thread
+                    (lambda ()
+                      (tg-getupdate-loop bot))
+                    :name (format nil "TG-LOOP(~A)" (bot-name bot))))
+             (logging (bot-name bot)
+                      "[ERROR]tg-watcher: tg-loop dead, restarted."))))))
+
 (defun bot-start (config)
   (let ((bot (bot-load-conf config)))
     (irc-reconnect bot)
@@ -664,21 +681,7 @@
                                    (tg-getupdate-loop bot))
                                  :name (format nil "TG-LOOP(~A)" (bot-name bot))))
     (setf (bot-thread-tg-watcher bot)
-          (sb-thread:make-thread
-           (lambda (bot)
-             (loop
-                (sleep 10)
-                (let ((interval (- (get-universal-time)
-                                   (bot-tg-loop-update-time bot))))
-                  (if (> interval 40)
-                      (progn
-                        (sb-thread:terminate-thread
-                         (bot-thread-tg-loop bot))
-                        (setf (bot-thread-tg-loop bot)
-                              (sb-thread:make-thread
-                               (lambda ()
-                                 (tg-getupdate-loop bot))
-                               :name (format nil "TG-LOOP(~A)" (bot-name bot)))))))))))
+          (sb-thread:make-thread #'tg-watcher))
     (sleep 10)
     (create-watcher-f bot)
     bot))
