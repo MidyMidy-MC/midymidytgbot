@@ -148,10 +148,10 @@
             (bot-irc-message-pool-head bot))))
 
 (defun check-irc-hooks (bot msg)
-  ;; msg: irc message
+  ;; hook: (cons compiled-test-lambda(msg-body) unary-function(msg))
   (let* ((hooks-lst (bot-irc-hooks-lst bot))
          (hook (dolist (h hooks-lst)
-                 (if (cl-ppcre:all-matches (car h) (msg-body msg))
+                 (if (funcall (car h) (msg-body msg))
                      (return (cdr h))))))
     (if hook (funcall hook msg))))
 
@@ -644,7 +644,8 @@
 
 (defun load-irc-hooks (hooks-lst)
   (mapcar (lambda (pair)
-            (cons (car pair)
+            (cons (eval `(lambda (str) (cl-ppcre:all-matches ,(car pair) str)))
+                  ;; force cl-ppcre to compile the regex
                   (if (eq 'lambda (cadr pair))
                       (eval (cdr pair))
                       (error (format *log-out*
