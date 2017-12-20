@@ -40,6 +40,7 @@
    (sb-thread:make-mutex)
    :type sb-thread:mutex)
   (irc-reconnect-counter 0 :type integer)
+  (irc-hooks-lst '())
 
   (tg-bot-id nil :type integer)
   (tg-bot-authstr "" :type string)
@@ -146,6 +147,14 @@
       (setf (bot-irc-message-pool-tail bot)
             (bot-irc-message-pool-head bot))))
 
+(defun check-irc-hooks (bot msg)
+  ;; msg: irc message
+  (let* ((hooks-lst (bot-irc-hooks-lst bot))
+         (hook (dolist (h hooks-lst)
+                 (if (cl-ppcre:all-matches (car h) (msg-body msg))
+                     (return (cdr h))))))
+    (if hook (funcall hook msg))))
+
 ;; supress warning
 (defun bot-halt (bot) bot)
 (defun send-tg-message (bot str) bot str)
@@ -175,8 +184,10 @@
             (lambda (msg)
               (if (string= (bot-irc-channel bot)
                            (msg-channel msg))
-                  (send-tg-message bot
-                                   (msgstr-irc->tg msg)))))
+                  (progn
+                    (send-tg-message bot
+                                     (msgstr-irc->tg msg))
+                    (check-irc-hooks bot msg)))))
   (add-hook (bot-irc-connection bot)
             'irc::irc-pong-message
             (lambda (msg)
@@ -631,6 +642,16 @@
                                      (cdr pair))))))
           hooks-lst))
 
+(defun load-irc-hooks (hooks-lst)
+  (mapcar (lambda (pair)
+            (cons (car pair)
+                  (if (eq 'lambda (cadr pair))
+                      (eval (cdr pair))
+                      (error (format *log-out*
+                                     "loag-irc-hooks ERROR: Not lambda: ~A~%"
+                                     (cdr pair))))))
+          hooks-lst))
+
 (defun bot-load-conf (config)
   (let* ((irc-conf (jget :irc config))
          (tg-conf (jget :tg config))
@@ -646,6 +667,7 @@
                                     "irc.freenode.net")
                     :irc-port (jget :port irc-conf)
                     :irc-channel (jget :channel irc-conf)
+                    :irc-hooks-lst (load-irc-hooks (jget :hooks irc-conf))
                     :tg-bot-id (jget :bot-id tg-conf)
                     :tg-bot-authstr (jget :bot-token tg-conf)
                     :tg-chat-id (jget :chat-id tg-conf)
